@@ -1,0 +1,4 @@
+aioboto3==5.0.0
+aiobotocore==0.9.4
+botocore==1.10.58
+boto3==1.7.58
