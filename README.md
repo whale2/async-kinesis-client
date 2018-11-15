@@ -47,7 +47,9 @@ AsyncShardReader exposes property millis_behind_latest which could be useful for
 AsyncKinesisConsumer has following configuration methods:
 
 set_checkpoint_interval(records) - how many records to skip before checkpointing
+
 set_lock_duraion(time) - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
+
 set_reader_sleep_time(time) - how long should shard reader wait if it did not receive any records from Kinesis stream
  
 Producer is rather trivial:
