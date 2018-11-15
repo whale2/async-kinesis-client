@@ -44,6 +44,12 @@ consumer will stop all shard reader in that case.
 
 AsyncShardReader exposes property millis_behind_latest which could be useful for determining application performance.
 
+AsyncKinesisConsumer has following configuration methods:
+
+set_checkpoint_interval(records) - how many records to skip before checkpointing
+set_lock_duraion(time) - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
+set_reader_sleep_time(time) - how long should shard reader wait if it did not receive any records from Kinesis stream
+ 
 Producer is rather trivial:
 
 ```python
@@ -65,5 +71,23 @@ async def write_stream():
 
 ```
 
+AWS authentification. For testing outside AWS cloud, especially when Mutil-Factor Authentification is in use I find following snippet extremely useful:
+```python
+import os
+import aioboto3
+from botocore import credentials
+from aiobotocore import AioSession
+
+    working_dir = os.path.join(os.path.expanduser('~'), '.aws/cli/cache')
+    session = AioSession(profile=os.environ.get('AWS_PROFILE'))
+    provider = session.get_component('credential_provider').get_provider('assume-role')
+    provider.cache = credentials.JSONFileCache(working_dir)
+    aioboto3.setup_default_session(botocore_session=session)
+
+```
+
+This allows re-using cached session token after completing any aws command under awsudo, all you need is to set AWSPROFILE environment variable.
+
 Currently library lacks bulk put_records() method, proper tests, packaging and was not thoroughly tested for different network events.
 Actually, don't use it, it's very preliminary and WIP. 
+
