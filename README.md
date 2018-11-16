@@ -15,11 +15,11 @@ Usage:
 
 ```python
 import asyncio
-from async_kinesis_client import AsyncKinesisConsumer
+from async_kinesis_client.kinesis_consumer import AsyncKinesisConsumer
 
 async def read_stream():
     
-    # This is a coroutine that reads all records from shard
+    # This is a coroutine that reads all the records from a shard
     async def read_records(shard_reader):
         async for records in shard_reader.get_records():
             for r in records:
@@ -39,23 +39,24 @@ asyncio.get_event_loop().run_until_complete(read_stream())
 
 ```
 
-AsyncShardReader and AsyncKinesisConsumer can be stopped from parallel coroutine by calling stop() method,
-consumer will stop all shard reader in that case.
+*AsyncShardReader* and *AsyncKinesisConsumer* can be stopped from parallel coroutine by calling *stop()* method,
+consumer will stop all shard readers in that case.
+If you want to be notified of shard closing, catch *ShardClosedException* while reading records
 
-AsyncShardReader exposes property millis_behind_latest which could be useful for determining application performance.
+*AsyncShardReader* exposes property millis_behind_latest which could be useful for determining application performance.
 
-AsyncKinesisConsumer has following configuration methods:
+*AsyncKinesisConsumer* has following configuration methods:
 
-set_checkpoint_interval(records) - how many records to skip before checkpointing
+*set_checkpoint_interval(records)* - how many records to skip before checkpointing
 
-set_lock_duraion(time) - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
+*set_lock_duraion(time)* - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
 
-set_reader_sleep_time(time) - how long should shard reader wait if it did not receive any records from Kinesis stream
+*set_reader_sleep_time(time)* - how long should shard reader wait (in seconds, fractions possible) if it did not receive any records from Kinesis stream
  
 Producer is rather trivial:
 
 ```python
-from async_kinesis_client import AsyncKinesisProducer
+from async_kinesis_client.kinesis_producer import AsyncKinesisProducer
 
 # ...
 
@@ -73,7 +74,9 @@ async def write_stream():
 
 ```
 
-AWS authentification. For testing outside AWS cloud, especially when Mutil-Factor Authentification is in use I find following snippet extremely useful:
+Currently lacks bulk *put_records* method.
+
+AWS authentication. For testing outside AWS cloud, especially when Mutil-Factor Authentication is in use I find following snippet extremely useful:
 ```python
 import os
 import aioboto3
@@ -88,8 +91,7 @@ from aiobotocore import AioSession
 
 ```
 
-This allows re-using cached session token after completing any aws command under awsudo, all you need is to set AWSPROFILE environment variable.
+This allows re-using cached session token after completing any aws command under *awsudo*, all you need is to set AWS_PROFILE environment variable.
 
-Currently library lacks bulk put_records() method, proper tests, packaging and was not thoroughly tested for different network events.
+Currently library lacks bulk put_records() method, DynamoDB tests and was not thoroughly tested for different network events.
 Actually, don't use it, it's very preliminary and WIP. 
-

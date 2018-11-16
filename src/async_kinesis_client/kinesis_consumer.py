@@ -65,7 +65,7 @@ class AsyncShardReader(StoppableProcess):
                       dynamodb, self.checkpoint_interval)
             self.dynamodb = dynamodb
 
-        self.client = aioboto3.client('kinesis')
+        self.client = consumer._get_kinesis_client()
         self.retries = 0
         self.record_count = 0
         self.is_running = True
@@ -77,24 +77,22 @@ class AsyncShardReader(StoppableProcess):
         exception if retrying is needed or shard is closed
         :return: list of records as returned by kinesis client
         """
+        if self.shard_iter is None:
+            log.debug("Shard %s has been closed, exiting", self.shard_id)
+            raise ShardClosedException
         try:
             resp = await self.client.get_records(ShardIterator=self.shard_iter)
         except ClientError as e:
-            if e.response['Error']['Code'] in RETRY_EXCEPTIONS:
+            if e.response.get('Error',{}).get('Code') in RETRY_EXCEPTIONS:
                 raise RetryGetRecordsException
             else:
                 log.error("Client error occurred while reading: %s", e)
                 self.is_running = False
                 raise e
         else:
-            if not resp['NextShardIterator']:
-                # the shard has been closed
-                log.debug("Our shard has been closed, exiting")
-                raise ShardClosedException
-
-            self.shard_iter = resp['NextShardIterator']
-            self.millis_behind_latest = resp['MillisBehindLatest']
-            return resp['Records']
+            self.shard_iter = resp.get('NextShardIterator')
+            self.millis_behind_latest = resp.get('MillisBehindLatest')
+            return resp.get('Records')
 
     async def get_records(self):
         """
@@ -169,6 +167,9 @@ class AsyncKinesisConsumer(StoppableProcess):
     def set_reader_sleep_time(self, sleep_time):
         self.reader_sleep_time = sleep_time
 
+    def _get_kinesis_client(self):
+        return self.kinesis_client
+
     def stop(self):
         for shard_id, reader in self.shard_readers.items():
             log.debug('Stopping reader for shard %s', shard_id)
@@ -191,16 +192,20 @@ class AsyncKinesisConsumer(StoppableProcess):
         stream_data = {}
         while True:
             # Check if all readers are alive and kicking
+            shard_readers = {}
             for shard_id, shard_reader in self.shard_readers.items():
                 if not shard_reader.is_running:
+                    log.debug('Reader for shard %s is not running anymore, forcing rescan', shard_id)
                     self.force_rescan = True
-                    del self.shard_readers[shard_id]
+                else:
+                    shard_readers[shard_id] = shard_reader
+            self.shard_readers = shard_readers
             if self.force_rescan:
-                log.debug("Getting stream description '%s'", self.stream_name)
+                log.debug("Getting description for stream '%s'", self.stream_name)
                 stream_data = await self.kinesis_client.describe_stream(StreamName=self.stream_name)
                 # XXX TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
 
-                log.debug('Stream has %d shards', len(stream_data['StreamDescription']['Shards']))
+                log.debug('Stream has %d shard(s)', len(stream_data['StreamDescription']['Shards']))
             # locks have to be either acquired first time or refreshed
             for shard_data in stream_data['StreamDescription']['Shards']:
                 iterator_args = dict(ShardIteratorType='LATEST')
@@ -232,12 +237,12 @@ class AsyncKinesisConsumer(StoppableProcess):
                             iterator_args = dynamodb.get_iterator_args()
                 if shard_id not in self.shard_readers or not self.shard_readers[shard_id].is_running:
 
-                    log.info("%s iterator arguments: %s", shard_id, iterator_args)
+                    log.debug("%s iterator arguments: %s", shard_id, iterator_args)
 
                     # get our initial iterator
                     shard_iter = await self.kinesis_client.get_shard_iterator(
                         StreamName=self.stream_name,
-                        ShardId=shard_data['ShardId'],
+                        ShardId=shard_id,
                         **iterator_args
                     )
                     # create and yield ShardReader

@@ -19,13 +19,19 @@ class CheckpointTimeoutException(Exception):
 class DynamoDB:
     """
     Class for checkpointing stream using async calls to DynamoDB
-    Basically, state.py from kinesis-python client, but with async calls
-    and tailored for per-shard operations
+    Basically, state.py from kinesis-python client by Evan Borgstrom <eborgstrom@nerdwallet.com>,
+    but with async calls and tailored for per-shard operations
     """
 
     DEFAULT_MAX_RETRIES = 5
 
     def __init__(self, table_name, shard_id, max_retries=DEFAULT_MAX_RETRIES):
+        """
+        Initalize DynamoDB
+        :param table_name: DynamoDB table name
+        :param shard_id: ShardId as returned by kinesis client
+        :param max_retries: Max retries for communicating with DunamoDB
+        """
         self.table_name = table_name
         self.shard_id = shard_id
         self.shard = {}
@@ -37,7 +43,7 @@ class DynamoDB:
         try:
             return dict(
                 ShardIteratorType='AFTER_SEQUENCE_NUMBER',
-                StartingSequenceNumber=self.shard['seq']
+                StartingSequenceNumber=self.shard.get('seq')
             )
         except KeyError:
             return dict(
@@ -71,7 +77,7 @@ class DynamoDB:
                 }
             )
         except ClientError as exc:
-            if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
+            if exc.response('Error', {}).get('Code') in RETRY_EXCEPTIONS:
                 log.warning("Throttled while trying to read lock table in Dynamo: %s", exc)
                 await self.retry(self.checkpoint(seq))
 
@@ -95,22 +101,22 @@ class DynamoDB:
         try:
             # Do a consistent read to get the current document for our shard id
             resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
-            self.shard = resp['Item']
+            self.shard = resp.get('Item')
         except KeyError:
             # if there's no Item in the resp then the document didn't exist
             pass
         except ClientError as e:
-            if e.response['Error']['Code'] in RETRY_EXCEPTIONS:
-                log.warning("Throttled while trying to read lock table in Dynamo: %s", e)
+            if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
+                log.warning("Throttled while trying to read lock table in DynamoDB: %s", e)
                 return await self.retry(self.lock_shard(lock_holding_time))
 
             # all other client errors just get re-raised
             raise
         else:
-            if fqdn != self.shard['fqdn'] and now < self.shard['expires']:
+            if fqdn != self.shard.get('fqdn') and now < self.shard.get('expires'):
                 # we don't hold the lock and it hasn't expired
                 log.debug("Not starting reader for shard %s -- locked by %s until %s",
-                          self.shard_id, self.shard['fqdn'], self.shard['expires'])
+                          self.shard_id, self.shard.get('fqdn'), self.shard.get('expires'))
                 return False
 
         try:
@@ -124,8 +130,8 @@ class DynamoDB:
                 ExpressionAttributeValues={
                     ':new_fqdn': fqdn,
                     ':new_expires': expire_time,
-                    ':current_fqdn': self.shard['fqdn'],
-                    ':current_expires': self.shard['expires'],
+                    ':current_fqdn': self.shard.get('fqdn'),
+                    ':current_expires': self.shard.get('expires'),
                 }
             )
         except KeyError:
@@ -147,11 +153,11 @@ class DynamoDB:
                 ReturnValues='ALL_NEW'
             )
         except ClientError as e:
-            if e.response['Error']['Code'] == "ConditionalCheckFailedException":
+            if e.response.get('Error', {}).get('Code') == "ConditionalCheckFailedException":
                 # someone else grabbed the lock first
                 return False
 
-            if e.response['Error']['Code'] in RETRY_EXCEPTIONS:
+            if e.response('Error', {}).get('Code') in RETRY_EXCEPTIONS:
                 log.warning("Throttled while trying to write lock table in Dynamo: %s", e)
                 return await self.retry(self.lock_shard(lock_holding_time))
 
