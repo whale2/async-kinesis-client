@@ -7,7 +7,7 @@ with open('README.md', 'r') as readme_fd:
     long_description = readme_fd.read()
 
 setup(
-    name='async-kinesis-cient',
+    name='async-kinesis-client',
     version=version,
     description='Asynchronous Python client for AWS Kinesis',
     long_description=long_description,
