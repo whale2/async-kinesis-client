@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 import aioboto3
 
 from botocore.exceptions import ClientError
@@ -17,6 +18,13 @@ class ShardClosedException(Exception):
 class RetryGetRecordsException(Exception):
     pass
 
+class RecordWrapper:
+
+    def __init__(self, record):
+        self.record = record
+
+    def get_record(self):
+        return self.record
 
 class StoppableProcess:
 
@@ -107,7 +115,7 @@ class AsyncShardReader(StoppableProcess):
                     return
                 records = await self._get_records()
                 if len(records) > 0:
-                    yield records
+                    yield [RecordWrapper(r) for r in records]
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)
                 if self.dynamodb and self.record_count > self.checkpoint_interval:
@@ -140,7 +148,7 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_CHECKPOINT_INTERVAL = 100
     DEFAULT_LOCK_DURATION = 30
 
-    def __init__(self, stream_name, checkpoint_table=None):
+    def __init__(self, stream_name, checkpoint_table=None, host_key=None):
 
         super(AsyncKinesisConsumer, self).__init__()
 
@@ -148,6 +156,7 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.kinesis_client = aioboto3.client('kinesis')
 
         self.checkpoint_table = checkpoint_table
+        self.host_key = host_key
 
         self.shard_readers = {}
         self.dynamodb_instances = {}
@@ -217,7 +226,9 @@ class AsyncKinesisConsumer(StoppableProcess):
                         dynamodb = self.dynamodb_instances.get(shard_id,
                             DynamoDB(
                                 table_name=self.checkpoint_table,
-                                shard_id=shard_data['ShardId']))
+                                shard_id=shard_data['ShardId'],
+                                host_key=self.host_key
+                            ))
                         shard_locked = await dynamodb.lock_shard(self.lock_duration)
                         self.dynamodb_instances[shard_id] = dynamodb
                     except CheckpointTimeoutException as e:
