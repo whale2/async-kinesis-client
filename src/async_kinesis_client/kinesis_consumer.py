@@ -18,13 +18,6 @@ class ShardClosedException(Exception):
 class RetryGetRecordsException(Exception):
     pass
 
-class RecordWrapper:
-
-    def __init__(self, record):
-        self.record = record
-
-    def get_record(self):
-        return self.record
 
 class StoppableProcess:
 
@@ -115,7 +108,7 @@ class AsyncShardReader(StoppableProcess):
                     return
                 records = await self._get_records()
                 if len(records) > 0:
-                    yield [RecordWrapper(r) for r in records]
+                    yield records
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)
                 if self.dynamodb and self.record_count > self.checkpoint_interval:

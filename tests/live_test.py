@@ -9,7 +9,7 @@ import gc
 
 import aioboto3
 from botocore import credentials
-from aiobotocore import AioSession
+from aioboto3.aiobotocore import AioSession
 
 from src.async_kinesis_client.kinesis_consumer import AsyncKinesisConsumer
 
