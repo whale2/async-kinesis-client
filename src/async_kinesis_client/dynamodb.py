@@ -28,9 +28,10 @@ class DynamoDB:
     def __init__(self, table_name, shard_id, max_retries=DEFAULT_MAX_RETRIES, host_key=None):
         """
         Initalize DynamoDB
-        :param table_name: DynamoDB table name
-        :param shard_id: ShardId as returned by kinesis client
-        :param max_retries: Max retries for communicating with DunamoDB
+        :param table_name:  DynamoDB table name
+        :param shard_id:    ShardId as returned by kinesis client
+        :param max_retries: Max retries for communicating with DynamoDB
+        :param host_key:    Key to identify reader. If no key provided, defaults to FQDN
         """
         self.table_name = table_name
         self.shard_id = shard_id

@@ -44,8 +44,8 @@ class StoppableProcess:
 class AsyncShardReader(StoppableProcess):
     """
     Read from a specific shard, yielding records from async generator
-    Remark: how long we sleep between calls to get_records
-    this follow these best practices: http://docs.aws.amazon.com/streams/latest/dev/kinesis-low-latency.html
+    Remark: how long we sleep between calls to get_records -
+            this follow these best practices: http://docs.aws.amazon.com/streams/latest/dev/kinesis-low-latency.html
     """
 
     def __init__(self, shard_id, shard_iter, dynamodb, checkpoint_interval, sleep_time, consumer):
@@ -142,6 +142,12 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_LOCK_DURATION = 30
 
     def __init__(self, stream_name, checkpoint_table=None, host_key=None):
+        """
+        Initialize Async Kinseis Consumer
+        :param stream_name:         stream name to read from
+        :param checkpoint_table:    DynamoDB table for checkpointing; If not set, checkpointing is not used
+        :param host_key:            Key to identify reader instance; If not set, defaults to FQDN.
+        """
 
         super(AsyncKinesisConsumer, self).__init__()
 
