@@ -42,12 +42,12 @@ class TestProducer(TestCase):
     def test_producer(self):
 
         async def test():
-            await self.producer.put_record({'Data': 'zzzz'})
-            await self.producer.put_record({'Data': 'wwww'})
+            await self.producer.put_record({'Data': b'zzzz'})
+            await self.producer.put_record({'Data': b'wwww'})
             self.assertEqual(len(self.records), 2)
-            self.assertEqual(self.records[0].get('Data').get('Data'), 'zzzz')
-            self.assertEqual(self.records[1].get('Data').get('Data'), 'wwww')
-            self.assertEqual(self.records[1].get('SequenceNumberForOrdering'), '1')
+            self.assertEqual(b'zzzz', self.records[0].get('Data').get('Data'))
+            self.assertEqual(b'wwww', self.records[1].get('Data').get('Data'))
+            self.assertEqual('1', self.records[1].get('SequenceNumberForOrdering'))
 
         self.event_loop.run_until_complete(test())
 
@@ -55,44 +55,43 @@ class TestProducer(TestCase):
 
         async def test():
             records = [
-                {'Data': 'zzzz'},
-                {'Data': 'wwww'}
+                {'Data': b'zzzz'},
+                {'Data': b'wwww'}
             ]
             await self.producer.put_records(records=records)
             await self.producer.flush()
 
             self.assertEqual(len(self.records), 2)
-            self.assertEqual(self.records[0].get('Data').get('Data'), 'zzzz')
-            self.assertEqual(self.records[1].get('Data').get('Data'), 'wwww')
+            self.assertEqual(b'zzzz', self.records[0].get('Data'))
+            self.assertEqual(b'wwww', self.records[1].get('Data'))
 
         self.event_loop.run_until_complete(test())
 
     def test_limits(self):
 
         src.async_kinesis_client.kinesis_producer.MAX_RECORDS_IN_BATCH = 3
-        src.async_kinesis_client.kinesis_producer.MAX_RECORD_SIZE = 350
-        src.async_kinesis_client.kinesis_producer.MAX_BATCH_SIZE = 1000
+        src.async_kinesis_client.kinesis_producer.MAX_RECORD_SIZE = 70
 
         async def test():
 
             # Check that 4th record triggers flush
             records = [
-                {'Data': 'zzzz'},
-                {'Data': 'wwww'},
-                {'Data': 'qqqq'},
-                {'Data': 'dddd'},
+                {'Data': b'zzzz'},
+                {'Data': b'wwww'},
+                {'Data': b'qqqq'},
+                {'Data': b'dddd'},
 
             ]
             await self.producer.put_records(records=records)
 
-            self.assertEqual(len(self.records), 3)
-            self.assertEqual(len(self.producer.record_buf), 1)
+            self.assertEqual(3, len(self.records))
+            self.assertEqual(1, len(self.producer.record_buf))
 
             await self.producer.flush()
 
             # Check that too big record raises ValueError
             records = [
-                {'Data': 'looongcatislooong' * 10 }
+                {'Data': ('looongcatislooong' * 10).encode() }
             ]
             try:
                 await self.producer.put_records(records=records)
@@ -101,17 +100,19 @@ class TestProducer(TestCase):
             else:
                 self.fail('ValueError not raised')
 
+            src.async_kinesis_client.kinesis_producer.MAX_BATCH_SIZE = 1470
+
             # Check that exceeding MAX_BATCH_SIZE triggers flush
             records = [
-                {'Data': 'zzzz'},
-                {'Data': 'wwww'},
-                {'Data': 'qqqq'}
+                {'Data': b'zzzz'},
+                {'Data': b'wwww'},
+                {'Data': b'qqqq'}
             ]
 
             self.records = []
             await self.producer.put_records(records=records)
 
-            self.assertEqual(len(self.records), 2)
-            self.assertEqual(len(self.producer.record_buf), 1)
+            self.assertEqual(2, len(self.records))
+            self.assertEqual(1, len(self.producer.record_buf))
 
         self.event_loop.run_until_complete(test())

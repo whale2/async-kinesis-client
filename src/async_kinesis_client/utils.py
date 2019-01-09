@@ -15,8 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
 import sys
+from collections import Iterable, Mapping
 
 
 def _sizeof(obj, seen=None):
@@ -35,12 +35,12 @@ def _sizeof(obj, seen=None):
     # since strings are iterables we return their size explicitly first
     if isinstance(obj, str):
         return size
-    elif isinstance(obj, collections.Mapping):
+    elif isinstance(obj, Mapping):
         return size + sum(
             _sizeof(key, seen) + _sizeof(val, seen)
             for key, val in obj.items()
         )
-    elif isinstance(obj, collections.Iterable):
+    elif isinstance(obj, Iterable):
         return size + sum(
             _sizeof(item, seen)
             for item in obj

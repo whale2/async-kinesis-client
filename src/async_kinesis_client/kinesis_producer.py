@@ -67,15 +67,23 @@ class AsyncKinesisProducer:
             self.seq = resp.get('SequenceNumber')
         return resp
 
-    async def put_records(self, records, partition_key=None, explicit_hash_key=None):
+    async def put_records(self, records):
         """
         Put list of records into Kinesis stream
         This call is buffered until it outgrow maximum allowed sizes (500 records or 5 Mb of data including partition
         keys) or until explicitly flushed (see flush() below)
 
-        :param records:             iterable with records to put; records should be of bytes type
-        :param partition_key:       partition key to determine shard; if none, time-based key is used
-        :param explicit_hash_key:   hash value used to determine the shard explicitly, overriding partition key
+        :param records:             iterable with records to put; has following structure:
+                                    records=[
+                                        {
+                                            'Data': b'bytes',
+                                            'ExplicitHashKey': 'string',
+                                            'PartitionKey': 'string'
+                                        },
+                                    ],
+                                    If no 'PartitionKey' given, default time-based key will be used
+                                    See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kinesis.html#Kinesis.Client.put_records
+                                    for details
         :return:                    Empty list if no records were flushed, list of responses from kinesis client
                                     otherwise
 
@@ -85,27 +93,22 @@ class AsyncKinesisProducer:
         """
         resp = []
         n = 1
-        for r in records:
+        for datum in records:
 
             if len(self.record_buf) == MAX_RECORDS_IN_BATCH:
                 resp.append(await self.flush())
 
-            record_size = _sizeof(r)
+            record_size = _sizeof(datum.get('Data'))
 
             # I hope I'm implementing this correctly, as there are different hints about maximum data sizes
             # in boto3 docs and general AWS docs
             if record_size > MAX_RECORD_SIZE:
                 raise ValueError('Record # {} exceeded max record size of {}; size={}; record={}'.format(
-                    n, MAX_RECORD_SIZE, record_size, r))
+                    n, MAX_RECORD_SIZE, record_size, datum))
 
-            datum = {}
+            if datum.get('PartitionKey') is None:
+                datum['PartitionKey'] = _get_default_partition_key()
 
-            if explicit_hash_key :
-                datum['ExplicitHashKey'] = explicit_hash_key
-            else:
-                datum['PartitionKey'] = partition_key or _get_default_partition_key()
-
-            datum['Data'] = r
             datum_size = _sizeof(datum)
 
             if self.buf_size + datum_size > MAX_BATCH_SIZE:

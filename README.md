@@ -49,9 +49,11 @@ If you want to be notified of shard closing, catch *ShardClosedException* while 
 
 *set_checkpoint_interval(records)* - how many records to skip before checkpointing
 
-*set_lock_duraion(time)* - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
+*set_lock_duration(time)* - how many seconds to hold the lock. Consumer would attempt to refresh the lock before that time
 
 *set_reader_sleep_time(time)* - how long should shard reader wait (in seconds, fractions possible) if it did not receive any records from Kinesis stream
+
+*set_checkpoint_callback(coro)* - set callback coroutine to be called before checkpointing next batch of records. Coroutine arguments: *ShardId*, *SequenceNumber*
  
 Producer is rather trivial:
 
@@ -60,21 +62,50 @@ from async_kinesis_client.kinesis_producer import AsyncKinesisProducer
 
 # ...
 
-async def write_stream(): 
+async def write_stream():
     producer = AsyncKinesisProducer(
         stream_name='my-stream',
         ordered=True
     )
-    
+
     await producer.put_record(
-        record=record, 
-        partition_key=key, 
-        explicit_hash_key=None
+        record=b'bytes',
+        partition_key='string',     # optional, if none, default time-based key is used
+        explicit_hash_key='string'  # optional
     )
 
 ```
 
-Currently lacks bulk *put_records* method.
+Sending multiple records at once:
+
+```python
+from async_kinesis_client.kinesis_producer import AsyncKinesisProducer
+
+# ...
+
+async def write_stream():
+    producer = AsyncKinesisProducer(
+        stream_name='my-stream',
+        ordered=True
+    )
+
+    records = [
+        {
+            'Data': b'bytes',
+            'PartitionKey': 'string',   # optional, if none, default time-based key is used
+            'ExplicitHashKey': 'string' # optional
+        },
+        ...
+    ]
+
+    response = await producer.put_records(
+        records=records
+    )
+
+    # See boto3 docs for response structure:
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kinesis.html#Kinesis.Client.put_records
+```
+
 
 AWS authentication. For testing outside AWS cloud, especially when Mutil-Factor Authentication is in use I find following snippet extremely useful:
 ```python
@@ -93,5 +124,5 @@ from aiobotocore import AioSession
 
 This allows re-using cached session token after completing any aws command under *awsudo*, all you need is to set AWS_PROFILE environment variable.
 
-Currently library lacks bulk put_records() method, DynamoDB tests and was not thoroughly tested for different network events.
-Actually, don't use it, it's very preliminary and WIP. 
+Currently library lacks DynamoDB tests and was not thoroughly tested for different network events.
+Actually, use it on your own risk, it's very preliminary and WIP.
