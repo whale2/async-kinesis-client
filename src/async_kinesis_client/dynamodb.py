@@ -19,7 +19,7 @@ class CheckpointTimeoutException(Exception):
 class DynamoDB:
     """
     Class for checkpointing stream using async calls to DynamoDB
-    Basically, state.py from kinesis-python client by Evan Borgstrom <eborgstrom@nerdwallet.com>,
+    Based on state.py from kinesis-python client by Evan Borgstrom <eborgstrom@nerdwallet.com>,
     but with async calls and tailored for per-shard operations
     """
 

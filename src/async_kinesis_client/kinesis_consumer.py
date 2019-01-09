@@ -112,6 +112,10 @@ class AsyncShardReader(StoppableProcess):
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)
                 if self.dynamodb and self.record_count > self.checkpoint_interval:
+                    callback_coro = self.consumer._get_checkpoint_callback()
+                    if callback_coro:
+                        if not await callback_coro(self.shard_id, records[-1]['SequenceNumber']):
+                            raise ShardClosedException('Shard closed by application request')
                     await self.dynamodb.checkpoint(seq=records[-1]['SequenceNumber'])
                     self.record_count = 0
                 self.retries = 0
@@ -141,20 +145,27 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_CHECKPOINT_INTERVAL = 100
     DEFAULT_LOCK_DURATION = 30
 
-    def __init__(self, stream_name, checkpoint_table=None, host_key=None):
+    def __init__(
+            self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None, iterator_timestamp=None):
         """
         Initialize Async Kinseis Consumer
         :param stream_name:         stream name to read from
         :param checkpoint_table:    DynamoDB table for checkpointing; If not set, checkpointing is not used
         :param host_key:            Key to identify reader instance; If not set, defaults to FQDN.
+        :param shard_iterator_type  Type of shard iterator, see https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kinesis.html#Kinesis.Client.get_shard_iterator
+        :param iterator_timestamp   Timestamp (datetime type) for shard iterator of type 'AT_TIMESTAMP'. See link above
         """
 
         super(AsyncKinesisConsumer, self).__init__()
 
         self.stream_name = stream_name
+        self.shard_iterator_type = shard_iterator_type
+        self.iterator_timestamp = iterator_timestamp
+
         self.kinesis_client = aioboto3.client('kinesis')
 
         self.checkpoint_table = checkpoint_table
+        self.checkpoint_callback = None
         self.host_key = host_key
 
         self.shard_readers = {}
@@ -165,6 +176,23 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.checkpoint_interval = AsyncKinesisConsumer.DEFAULT_CHECKPOINT_INTERVAL
         self.lock_duration = AsyncKinesisConsumer.DEFAULT_LOCK_DURATION
         self.reader_sleep_time = AsyncKinesisConsumer.DEFAULT_SLEEP_TIME
+
+    def set_checkpoint_callback(self, callback):
+        """
+        Sets application callback coroutine to be called before checkpointing next batch of records
+        The callback should return True if the records received from AsyncKinesisReader were
+        successfully processed by application and can be checkpointed.
+        The application can try to finish processing received records before returning value from this callback.
+        If False value is returned, the Shard Reader will exit
+        The callback is called with following arguments:
+            ShardId         - Shard Id of the shard attempting checkpointing
+            SequenceNumber  - Last SequenceId of the record in batch
+        :param callback:
+        """
+        self.checkpoint_callback = callback
+
+    def _get_checkpoint_callback(self):
+        return self.checkpoint_callback
 
     def set_checkpoint_interval(self, interval):
         self.checkpoint_interval = interval
@@ -249,6 +277,12 @@ class AsyncKinesisConsumer(StoppableProcess):
 
                     log.debug("%s iterator arguments: %s", shard_id, iterator_args)
 
+                    # override shard_iterator_type if given in constructor
+                    if self.shard_iterator_type:
+                        iterator_args['ShardIteratorType'] = self.shard_iterator_type
+                        if self.shard_iterator_type == 'AT_TIMESTAMP':
+                            iterator_args['Timestamp'] = self.iterator_timestamp
+
                     # get our initial iterator
                     shard_iter = await self.kinesis_client.get_shard_iterator(
                         StreamName=self.stream_name,
@@ -272,4 +306,3 @@ class AsyncKinesisConsumer(StoppableProcess):
             # If interruptable_sleep returned false, we were signalled to stop
             if not await self.interruptable_sleep(self.lock_duration * 0.8):
                 return
-

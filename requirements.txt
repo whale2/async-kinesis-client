@@ -1,4 +1,4 @@
 aioboto3==6.0.1
-multidict==4.5.2
+multidict>=4.5.2
 botocore==1.12.49
 boto3==1.9.49

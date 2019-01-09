@@ -7,6 +7,7 @@ import aioboto3
 
 from src.async_kinesis_client.kinesis_consumer import AsyncKinesisConsumer, ShardClosedException
 
+
 # TODO: Add tests for DynamoDB
 
 class TestConsumer(TestCase):
@@ -19,7 +20,7 @@ class TestConsumer(TestCase):
 
         self.sample_record = {
             'MillisBehindLatest': 0,
-            'Records': [ {'Data': 'xxxx'} ],
+            'Records': [{'Data': 'xxxx'}],
         }
 
         aioboto3.setup_default_session(botocore_session=MagicMock())
@@ -52,7 +53,7 @@ class TestConsumer(TestCase):
                 ]
             }
         } if not self.shard_closed else {
-            'StreamDescription' : {
+            'StreamDescription': {
                 'Shards': []
             }
         }
@@ -62,21 +63,20 @@ class TestConsumer(TestCase):
             'ShardIterator': {}
         }
 
-
-    def test_consmuer(self):
+    def test_consumer(self):
 
         async def read():
-                cnt = 0
-                async for shard_reader in self.consumer.get_shard_readers():
-                    try:
-                        async for record in shard_reader.get_records():
-                            self.test_data.append(record[0]['Data'])
-                    except ShardClosedException:
-                        if cnt > 0:
-                            # We should get second shard reader after first one gets closed
-                            # However we signal mocked method to stop returning shards after that
-                            self.shard_closed = True
-                        cnt += 1
+            cnt = 0
+            async for shard_reader in self.consumer.get_shard_readers():
+                try:
+                    async for record in shard_reader.get_records():
+                        self.test_data.append(record[0]['Data'])
+                except ShardClosedException:
+                    if cnt > 0:
+                        # We should get second shard reader after first one gets closed
+                        # However we signal mocked method to stop returning shards after that
+                        self.shard_closed = True
+                    cnt += 1
 
         async def stop_test():
             await asyncio.sleep(2)
