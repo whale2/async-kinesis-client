@@ -80,6 +80,8 @@ class AsyncKinesisProducer:
                                     otherwise
 
                                     Raises ValueError if single record exceeds 1 Mb
+                                    Currently application should check for ProvisionedThroughputExceededException
+                                    in response structure itself.
         """
         resp = []
         n = 1

@@ -112,6 +112,10 @@ class AsyncShardReader(StoppableProcess):
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)
                 if self.dynamodb and self.record_count > self.checkpoint_interval:
+                    callback_coro = self.consumer._get_checkpoint_callback()
+                    if callback_coro:
+                        if not await callback_coro(self.shard_id, records[-1]['SequenceNumber']):
+                            raise ShardClosedException('Shard closed by application request')
                     await self.dynamodb.checkpoint(seq=records[-1]['SequenceNumber'])
                     self.record_count = 0
                 self.retries = 0
@@ -161,6 +165,7 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.kinesis_client = aioboto3.client('kinesis')
 
         self.checkpoint_table = checkpoint_table
+        self.checkpoint_callback = None
         self.host_key = host_key
 
         self.shard_readers = {}
@@ -171,6 +176,23 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.checkpoint_interval = AsyncKinesisConsumer.DEFAULT_CHECKPOINT_INTERVAL
         self.lock_duration = AsyncKinesisConsumer.DEFAULT_LOCK_DURATION
         self.reader_sleep_time = AsyncKinesisConsumer.DEFAULT_SLEEP_TIME
+
+    def set_checkpoint_callback(self, callback):
+        """
+        Sets application callback coroutine to be called before checkpointing next batch of records
+        The callback should return True if the records received from AsyncKinesisReader were
+        successfully processed by application and can be checkpointed.
+        The application can try to finish processing received records before returning value from this callback.
+        If False value is returned, the Shard Reader will exit
+        The callback is called with following arguments:
+            ShardId         - Shard Id of the shard attempting checkpointing
+            SequenceNumber  - Last SequenceId of the record in batch
+        :param callback:
+        """
+        self.checkpoint_callback = callback
+
+    def _get_checkpoint_callback(self):
+        return self.checkpoint_callback
 
     def set_checkpoint_interval(self, interval):
         self.checkpoint_interval = interval

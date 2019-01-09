@@ -63,7 +63,7 @@ class TestConsumer(TestCase):
             'ShardIterator': {}
         }
 
-    def test_consmuer(self):
+    def test_consumer(self):
 
         async def read():
             cnt = 0
