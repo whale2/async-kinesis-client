@@ -141,17 +141,23 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_CHECKPOINT_INTERVAL = 100
     DEFAULT_LOCK_DURATION = 30
 
-    def __init__(self, stream_name, checkpoint_table=None, host_key=None):
+    def __init__(
+            self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None, iterator_timestamp=None):
         """
         Initialize Async Kinseis Consumer
         :param stream_name:         stream name to read from
         :param checkpoint_table:    DynamoDB table for checkpointing; If not set, checkpointing is not used
         :param host_key:            Key to identify reader instance; If not set, defaults to FQDN.
+        :param shard_iterator_type  Type of shard iterator, see https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kinesis.html#Kinesis.Client.get_shard_iterator
+        :param iterator_timestamp   Timestamp (datetime type) for shard iterator of type 'AT_TIMESTAMP'. See link above
         """
 
         super(AsyncKinesisConsumer, self).__init__()
 
         self.stream_name = stream_name
+        self.shard_iterator_type = shard_iterator_type
+        self.iterator_timestamp = iterator_timestamp
+
         self.kinesis_client = aioboto3.client('kinesis')
 
         self.checkpoint_table = checkpoint_table
@@ -249,6 +255,12 @@ class AsyncKinesisConsumer(StoppableProcess):
 
                     log.debug("%s iterator arguments: %s", shard_id, iterator_args)
 
+                    # override shard_iterator_type if given in constructor
+                    if self.shard_iterator_type:
+                        iterator_args['ShardIteratorType'] = self.shard_iterator_type
+                        if self.shard_iterator_type == 'AT_TIMESTAMP':
+                            iterator_args['Timestamp'] = self.iterator_timestamp
+
                     # get our initial iterator
                     shard_iter = await self.kinesis_client.get_shard_iterator(
                         StreamName=self.stream_name,
@@ -272,4 +284,3 @@ class AsyncKinesisConsumer(StoppableProcess):
             # If interruptable_sleep returned false, we were signalled to stop
             if not await self.interruptable_sleep(self.lock_duration * 0.8):
                 return
-
