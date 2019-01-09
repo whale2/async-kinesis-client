@@ -3,7 +3,7 @@ import time
 
 import aioboto3
 
-from src.async_kinesis_client.utils import _sizeof
+from . import utils
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class AsyncKinesisProducer:
             if len(self.record_buf) == MAX_RECORDS_IN_BATCH:
                 resp.append(await self.flush())
 
-            record_size = _sizeof(datum.get('Data'))
+            record_size = utils._sizeof(datum.get('Data'))
 
             # I hope I'm implementing this correctly, as there are different hints about maximum data sizes
             # in boto3 docs and general AWS docs
@@ -109,7 +109,7 @@ class AsyncKinesisProducer:
             if datum.get('PartitionKey') is None:
                 datum['PartitionKey'] = _get_default_partition_key()
 
-            datum_size = _sizeof(datum)
+            datum_size = utils._sizeof(datum)
 
             if self.buf_size + datum_size > MAX_BATCH_SIZE:
                 resp.append(await self.flush())
