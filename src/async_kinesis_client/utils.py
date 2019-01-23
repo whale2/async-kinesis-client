@@ -16,7 +16,7 @@
 # limitations under the License.
 
 import sys
-from collections import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 
 def _sizeof(obj, seen=None):

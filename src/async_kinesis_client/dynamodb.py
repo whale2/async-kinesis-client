@@ -75,7 +75,7 @@ class DynamoDB:
                 log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
                 return
             except ClientError as exc:
-                if exc.response('Error', {}).get('Code') in RETRY_EXCEPTIONS:
+                if exc.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
                     log.warning("Throttled while trying to read lock table in Dynamo: %s", exc)
                     await asyncio.sleep(self.retry_sleep_time)
                     retries -= 1
@@ -164,7 +164,7 @@ class DynamoDB:
                     log.debug('Shard %s already locked by another instance', self.shard_id)
                     return False
 
-                if e.response('Error', {}).get('Code') in RETRY_EXCEPTIONS:
+                if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
                     log.warning('Throttled while trying to write lock table in Dynamo: %s', e)
                     await asyncio.sleep(self.retry_sleep_time)
                     retries -= 1

@@ -1,3 +1,8 @@
+# 0.1.1 (2019-01-23)
+
+- Fix deprecation warning for collections
+- Fix dumb errors in dynamodb.py (forgot to add .get() )
+
 # 0.1.0 (2019-01-09)
 
 - The 0.0.4 release should actually be 0.1.0
