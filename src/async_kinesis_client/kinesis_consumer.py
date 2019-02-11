@@ -256,7 +256,10 @@ class AsyncKinesisConsumer(StoppableProcess):
                                 shard_id=shard_data['ShardId'],
                                 host_key=self.host_key
                             ))
-                        shard_locked = await dynamodb.lock_shard(self.lock_duration)
+                        # If iterator type is defined and not 'LATEST', we need to drop seq from DynamoDB table
+                        drop_seq = self.shard_iterator_type and self.shard_iterator_type != 'LATEST'
+                        shard_locked = await dynamodb.lock_shard(
+                            lock_holding_time=self.lock_duration, drop_seq=drop_seq)
                         self.dynamodb_instances[shard_id] = dynamodb
                     except CheckpointTimeoutException as e:
                         log.warning('Timeout while locking shard %s: %s', shard_id, e)

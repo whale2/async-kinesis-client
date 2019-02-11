@@ -1,3 +1,7 @@
+# 0.1.2 (2019-01-24)
+
+- Fix checkpointing for iterator types other than LATEST 
+
 # 0.1.1 (2019-01-23)
 
 - Fix deprecation warning for collections

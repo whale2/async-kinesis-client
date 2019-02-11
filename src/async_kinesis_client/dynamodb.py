@@ -84,7 +84,7 @@ class DynamoDB:
                     # for all other exceptions (including condition check failures) we just re-raise
                     raise exc
 
-    async def lock_shard(self, lock_holding_time):
+    async def lock_shard(self, lock_holding_time, drop_seq=False):
         """
         Lock shard, so no other instance will use it
         :param lock_holding_time: how long to hold the lock
@@ -128,9 +128,16 @@ class DynamoDB:
                     # Try to acquire the lock by setting our fqdn and calculated expires.
                     # We add a condition that ensures the fqdn & expires from the document we loaded hasn't changed to
                     # ensure that someone else hasn't grabbed a lock first.
+
+                    # If we're restarting from some particular timestamp or seq no, drop the one that
+                    # is stored in dynamoDB table
+                    update_expression = "set fqdn = :new_fqdn, expires = :new_expires"
+                    if drop_seq:
+                        update_expression += " remove seq"
+
                     await self.dynamo_table.update_item(
                         Key=dynamo_key,
-                        UpdateExpression="set fqdn = :new_fqdn, expires = :new_expires",
+                        UpdateExpression=update_expression,
                         ConditionExpression="fqdn = :current_fqdn AND expires = :current_expires",
                         ExpressionAttributeValues={
                             ':new_fqdn': fqdn,
