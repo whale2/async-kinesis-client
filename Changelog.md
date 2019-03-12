@@ -1,3 +1,8 @@
+# 0.1.3 (2019-03-11)
+
+- Fix checking record sizes
+- Add checking for payload type
+
 # 0.1.2 (2019-01-24)
 
 - Fix checkpointing for iterator types other than LATEST 

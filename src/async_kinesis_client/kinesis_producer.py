@@ -3,8 +3,6 @@ import time
 
 import aioboto3
 
-from . import utils
-
 log = logging.getLogger(__name__)
 
 
@@ -98,10 +96,16 @@ class AsyncKinesisProducer:
             if len(self.record_buf) == MAX_RECORDS_IN_BATCH:
                 resp.append(await self.flush())
 
-            record_size = utils._sizeof(datum.get('Data'))
+            data = datum.get('Data')
+            if not (isinstance(data, bytes) or isinstance(data, bytearray)):
+                raise TypeError('Record # {} is of type {}; accepted types are "bytes" and "bytearray"'.format(
+                    n, type(data)
+                ))
+            record_size = len(data)
 
-            # I hope I'm implementing this correctly, as there are different hints about maximum data sizes
-            # in boto3 docs and general AWS docs
+            # boto3 docs say that combined size of record and partition key should not exceed 1 MB,
+            # while in reality, at least with boto3==1.9.49 and botocore==1.12.49, the key size
+            # is not taken into account
             if record_size > MAX_RECORD_SIZE:
                 raise ValueError('Record # {} exceeded max record size of {}; size={}; record={}'.format(
                     n, MAX_RECORD_SIZE, record_size, datum))
@@ -109,13 +113,12 @@ class AsyncKinesisProducer:
             if datum.get('PartitionKey') is None:
                 datum['PartitionKey'] = _get_default_partition_key()
 
-            datum_size = utils._sizeof(datum)
-
-            if self.buf_size + datum_size > MAX_BATCH_SIZE:
+            # The same applies to batch size - only record size is counted
+            if self.buf_size + record_size > MAX_BATCH_SIZE:
                 resp.append(await self.flush())
 
             self.record_buf.append(datum)
-            self.buf_size += datum_size
+            self.buf_size += record_size
             n += 1
 
         return resp

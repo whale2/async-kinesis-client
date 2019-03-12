@@ -70,7 +70,7 @@ class TestProducer(TestCase):
     def test_limits(self):
 
         src.async_kinesis_client.kinesis_producer.MAX_RECORDS_IN_BATCH = 3
-        src.async_kinesis_client.kinesis_producer.MAX_RECORD_SIZE = 70
+        src.async_kinesis_client.kinesis_producer.MAX_RECORD_SIZE = 10
 
         async def test():
 
@@ -100,19 +100,20 @@ class TestProducer(TestCase):
             else:
                 self.fail('ValueError not raised')
 
-            src.async_kinesis_client.kinesis_producer.MAX_BATCH_SIZE = 1470
+            src.async_kinesis_client.kinesis_producer.MAX_BATCH_SIZE = 14
 
             # Check that exceeding MAX_BATCH_SIZE triggers flush
             records = [
                 {'Data': b'zzzz'},
                 {'Data': b'wwww'},
-                {'Data': b'qqqq'}
+                {'Data': b'qqqq'},
+                {'Data': b'dddd'}
             ]
 
             self.records = []
             await self.producer.put_records(records=records)
 
-            self.assertEqual(2, len(self.records))
+            self.assertEqual(3, len(self.records))
             self.assertEqual(1, len(self.producer.record_buf))
 
         self.event_loop.run_until_complete(test())
