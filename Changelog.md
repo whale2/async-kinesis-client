@@ -1,22 +1,22 @@
-# 0.1.4 (2019-03-26)
+## 0.1.4 (2019-03-26)
 
 - Fix a bug when restarted shard reader reads the shard from beginning/initial timestamp
 
-# 0.1.3 (2019-03-11)
+## 0.1.3 (2019-03-11)
 
 - Fix checking record sizes
 - Add checking for payload type
 
-# 0.1.2 (2019-01-24)
+## 0.1.2 (2019-01-24)
 
 - Fix checkpointing for iterator types other than LATEST 
 
-# 0.1.1 (2019-01-23)
+## 0.1.1 (2019-01-23)
 
 - Fix deprecation warning for collections
 - Fix dumb errors in dynamodb.py (forgot to add .get() )
 
-# 0.1.0 (2019-01-09)
+## 0.1.0 (2019-01-09)
 
 - The 0.0.4 release should actually be 0.1.0
 - Also fixed import of utils
