@@ -1,3 +1,7 @@
+# 0.1.4 (2019-03-26)
+
+- Fix a bug when restarted shard reader reads the shard from beginning/initial timestamp
+
 # 0.1.3 (2019-03-11)
 
 - Fix checking record sizes

@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 
 import aioboto3
@@ -71,6 +72,7 @@ class AsyncShardReader(StoppableProcess):
         self.record_count = 0
         self.is_running = True
         self.millis_behind_latest = 0
+        self.last_sequence_number = 0
 
     async def _get_records(self):
         """
@@ -118,6 +120,7 @@ class AsyncShardReader(StoppableProcess):
                             raise ShardClosedException('Shard closed by application request')
                     await self.dynamodb.checkpoint(seq=records[-1]['SequenceNumber'])
                     self.record_count = 0
+                self.last_sequence_number = records[-1]['SequenceNumber']
                 self.retries = 0
             except RetryGetRecordsException as e:
                 sleep_time = min((
@@ -144,6 +147,7 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_SLEEP_TIME = 0.3
     DEFAULT_CHECKPOINT_INTERVAL = 100
     DEFAULT_LOCK_DURATION = 30
+    DEFAULT_FALLBACK_TIME_DELTA = 3 * 60    # seconds
 
     def __init__(
             self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None, iterator_timestamp=None):
@@ -176,6 +180,7 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.checkpoint_interval = AsyncKinesisConsumer.DEFAULT_CHECKPOINT_INTERVAL
         self.lock_duration = AsyncKinesisConsumer.DEFAULT_LOCK_DURATION
         self.reader_sleep_time = AsyncKinesisConsumer.DEFAULT_SLEEP_TIME
+        self.fallback_time_delta = AsyncKinesisConsumer.DEFAULT_FALLBACK_TIME_DELTA
 
     def set_checkpoint_callback(self, callback):
         """
@@ -229,10 +234,12 @@ class AsyncKinesisConsumer(StoppableProcess):
         while True:
             # Check if all readers are alive and kicking
             shard_readers = {}
+            shards_to_restart = {}
             for shard_id, shard_reader in self.shard_readers.items():
                 if not shard_reader.is_running:
                     log.debug('Reader for shard %s is not running anymore, forcing rescan', shard_id)
                     self.force_rescan = True
+                    shards_to_restart[shard_id] = shard_reader.last_sequence_number
                 else:
                     shard_readers[shard_id] = shard_reader
             self.shard_readers = shard_readers
@@ -276,12 +283,30 @@ class AsyncKinesisConsumer(StoppableProcess):
                             continue
                         else:
                             iterator_args = dynamodb.get_iterator_args()
+
                 if shard_id not in self.shard_readers or not self.shard_readers[shard_id].is_running:
 
                     log.debug("%s iterator arguments: %s", shard_id, iterator_args)
 
+                    # override shard_iterator_type if reader for this shard is being restarted
+                    if shard_id in shards_to_restart:
+                        if self.checkpoint_table:
+                            starting_sequence_number = await dynamodb.get_last_checkpoint(shard_id)
+                        else:
+                            # Use sequence number stored in failed reader
+                            starting_sequence_number = shards_to_restart.get(shard_id)
+
+                        if starting_sequence_number is not None:
+                            iterator_args['ShardIteratorType'] = 'AT_SEQUENCE_NUMBER'
+                            iterator_args['StartingSequenceNumber'] = starting_sequence_number
+                        else:
+                            # Fallback to timestamp now() - fallback_time if we can't get sequence number
+                            iterator_args['ShardIteratorType'] = 'AT_TIMESTAMP'
+                            iterator_args['Timestamp'] = \
+                                datetime.datetime.now() - datetime.timedelta(seconds=self.fallback_time_delta)
+
                     # override shard_iterator_type if given in constructor
-                    if self.shard_iterator_type:
+                    elif self.shard_iterator_type:
                         iterator_args['ShardIteratorType'] = self.shard_iterator_type
                         if self.shard_iterator_type == 'AT_TIMESTAMP':
                             iterator_args['Timestamp'] = self.iterator_timestamp

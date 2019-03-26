@@ -87,7 +87,9 @@ class DynamoDB:
     async def lock_shard(self, lock_holding_time, drop_seq=False):
         """
         Lock shard, so no other instance will use it
+
         :param lock_holding_time: how long to hold the lock
+        :param drop_seq: remove sequence number attribute from checkpoint record
         :return: True if lock was obtained, False otherwise
         """
 
@@ -181,3 +183,36 @@ class DynamoDB:
         # we now hold the lock
         log.debug('Locked shard %s for host %s', self.shard_id, fqdn)
         return True
+
+    async def get_last_checkpoint(self, fqdn=None):
+        """
+        Get last checkpointed sequence number for shard
+        :param fqdn: If set, only get last checkpoint if fqdn matches
+        :return: sequence number
+        """
+
+        log.debug('Getting last checkpoint for shard %s', self.shard_id)
+        dynamo_key = {'shard': self.shard_id}
+
+        item = None
+        retries = self.max_retries
+        while retries > 0:
+            try:
+                # Do a consistent read to get the current document for our shard id
+                resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
+                item = resp.get('Item')
+                break
+            except ClientError as e:
+                if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
+                    log.warning("Throttled while trying to read lock table in DynamoDB: %s", e)
+                    await asyncio.sleep(self.retry_sleep_time)
+                    retries -= 1
+                    continue
+                else:
+                    # all other client errors just get re-raised
+                    raise e
+
+        if fqdn and fqdn != item.get('fqdn'):
+            return None
+
+        return item.get('seq')
