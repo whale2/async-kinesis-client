@@ -113,14 +113,15 @@ class AsyncShardReader(StoppableProcess):
                     yield records
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)
-                if self.dynamodb and self.record_count > self.checkpoint_interval:
+                if self.record_count > self.checkpoint_interval:
                     callback_coro = self.consumer._get_checkpoint_callback()
                     if callback_coro:
                         if not await callback_coro(self.shard_id, records[-1]['SequenceNumber']):
                             raise ShardClosedException('Shard closed by application request')
-                    await self.dynamodb.checkpoint(seq=records[-1]['SequenceNumber'])
+                    if self.dynamodb:
+                        await self.dynamodb.checkpoint(seq=records[-1]['SequenceNumber'])
+                    self.last_sequence_number = records[-1]['SequenceNumber']
                     self.record_count = 0
-                self.last_sequence_number = records[-1]['SequenceNumber']
                 self.retries = 0
             except RetryGetRecordsException as e:
                 sleep_time = min((
@@ -200,7 +201,14 @@ class AsyncKinesisConsumer(StoppableProcess):
         return self.checkpoint_callback
 
     def set_checkpoint_interval(self, interval):
+        """
+        Set how many records to skip between checkpointing; Zero means checkpoint on every record
+        Could be set in live AsyncKinesisConsumer
+        :param interval:    how many records to skip
+        """
         self.checkpoint_interval = interval
+        for _, reader in self.shard_readers.items():
+            reader.checkpoint_interval = interval
 
     def set_lock_duraion(self, lock_duration):
         self.lock_duration = lock_duration
@@ -298,7 +306,7 @@ class AsyncKinesisConsumer(StoppableProcess):
 
                         if starting_sequence_number is not None:
                             iterator_args['ShardIteratorType'] = 'AT_SEQUENCE_NUMBER'
-                            iterator_args['StartingSequenceNumber'] = starting_sequence_number
+                            iterator_args['StartingSequenceNumber'] = str(starting_sequence_number)
                         else:
                             # Fallback to timestamp now() - fallback_time if we can't get sequence number
                             iterator_args['ShardIteratorType'] = 'AT_TIMESTAMP'

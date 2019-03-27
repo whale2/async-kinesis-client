@@ -45,9 +45,10 @@ class TestConsumer(TestCase):
         logging.basicConfig(level=logging.DEBUG)
 
     async def mock_get_records(self, ShardIterator):
-        self.sample_record['Records'][0]['SequenceNumber'] = str(self.seq)
+        sample_record = copy.deepcopy(self.sample_record)
+        sample_record['Records'][0]['SequenceNumber'] = str(self.seq)
         self.seq += 1
-        return self.sample_record
+        return sample_record
 
     async def mock_describe_stream(self, StreamName):
 
@@ -110,6 +111,7 @@ class TestConsumer(TestCase):
 
         async def read():
 
+            self.consumer.set_checkpoint_interval(0)
             cnt = 0
             async for shard_reader in self.consumer.get_shard_readers():
                 # First iterator should be of type 'LATEST'
@@ -120,7 +122,7 @@ class TestConsumer(TestCase):
                     self.assertEqual(str(cnt - 1), self.iterator_kwargs.get('StartingSequenceNumber'))
                 try:
                     async for record in shard_reader.get_records():
-                        self.test_data.append(copy.deepcopy(record))
+                        self.test_data.append(record)
                 except ShardClosedException:
                     if cnt > 1:
                         # We should get second shard reader after first one gets closed
