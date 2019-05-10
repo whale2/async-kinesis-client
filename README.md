@@ -124,5 +124,5 @@ from aiobotocore import AioSession
 
 This allows re-using cached session token after completing any aws command under *awsudo*, all you need is to set AWS_PROFILE environment variable.
 
-Currently library lacks DynamoDB tests and was not thoroughly tested for different network events.
-Actually, use it on your own risk, it's very preliminary and WIP.
+Currently library still not tested enough for different network events.
+Use it on your own risk, you've been warned.
