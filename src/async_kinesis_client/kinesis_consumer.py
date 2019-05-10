@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 from .dynamodb import DynamoDB, CheckpointTimeoutException
 from .boto_exceptions import RETRY_EXCEPTIONS
 
-log = logging.getLogger(__name__)
+log = logging.getLogger(__name__.split('.')[-2])
 
 
 class ReaderExitException(Exception):

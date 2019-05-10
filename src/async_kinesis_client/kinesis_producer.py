@@ -3,7 +3,7 @@ import time
 
 import aioboto3
 
-log = logging.getLogger(__name__)
+log = logging.getLogger(__name__.split('.')[-2])
 
 
 # Following constants are originating from here:
