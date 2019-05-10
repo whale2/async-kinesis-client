@@ -56,10 +56,10 @@ class LiveTestKinesisConsumer(TestCase):
             )
             print('Configured consumer: {}'.format(consumer))
 
-            async def interruptor(consumer):
+            async def interruptor(kinesis_consumer):
                 await asyncio.sleep(60)
                 print('Stopping consumer')
-                consumer.stop()
+                kinesis_consumer.stop()
                 self.stopped = True
 
             self.stopped = False

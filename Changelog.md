@@ -1,3 +1,9 @@
+## 0.1.6 (2019-05-10)
+
+- Fix interaction with DynamoDB
+- Add handling of ExpiredIteratorException
+- Add tests
+
 ## 0.1.5 (2019-03-27)
 
 - Fix IndexError thrown out when shard has no records

@@ -33,8 +33,6 @@ class AsyncKinesisProducer:
         log.debug("Configured kinesis producer for stream '%s'; ordered=%s",
                   stream_name, ordered)
 
-
-
     async def put_record(self, record, partition_key=None, explicit_hash_key=None):
         """
         Put single record into Kinesis stream
