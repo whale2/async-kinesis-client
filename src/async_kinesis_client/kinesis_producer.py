@@ -3,6 +3,8 @@ import time
 
 import aioboto3
 
+from .retriable_operations import RetriableKinesisProducer
+
 log = logging.getLogger(__name__.split('.')[-2])
 
 
@@ -29,7 +31,8 @@ class AsyncKinesisProducer:
         self.record_buf = []
         self.buf_size = 0
 
-        self.kinesis_client = aioboto3.client('kinesis')
+        client = aioboto3.client('kinesis')
+        self.kinesis_client = RetriableKinesisProducer(client=client)
         log.debug("Configured kinesis producer for stream '%s'; ordered=%s",
                   stream_name, ordered)
 

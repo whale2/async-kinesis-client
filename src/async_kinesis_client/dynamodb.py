@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import socket
 import time
@@ -7,13 +6,9 @@ import aioboto3
 
 from botocore.exceptions import ClientError
 
-from .boto_exceptions import RETRY_EXCEPTIONS
+from .retriable_operations import RetriableDynamoDB
 
 log = logging.getLogger(__name__.split('.')[-2])
-
-
-class CheckpointTimeoutException(Exception):
-    pass
 
 
 class DynamoDB:
@@ -36,12 +31,10 @@ class DynamoDB:
         self.table_name = table_name
         self.shard_id = shard_id
         self.shard = {}
-        self.retries = 0
-        self.max_retries = max_retries
-        self.retry_sleep_time = 1
         self.host_key = host_key or socket.getfqdn()
         self.lock_holding_time = None
-        self.dynamo_table = aioboto3.resource('dynamodb').Table(self.table_name)
+        table = aioboto3.resource('dynamodb').Table(self.table_name)
+        self.dynamo_table = RetriableDynamoDB(table=table, retries=max_retries, retry_sleep_time=1)
 
     def get_iterator_args(self):
         if self.shard is not None and self.shard.get('seq') is not None:
@@ -59,38 +52,39 @@ class DynamoDB:
         Write checkpoint, so we know where in the stream we've been; also, update the lock
         :param seq: kinesis sequence number
         """
-        retries = self.max_retries
         # Convert string sequence into two decimals
-        superseq = int(seq[0:27])
-        subseq = int(seq[27:])
-        now = time.time()
-        expire_time = int(now + self.lock_holding_time)
-        while retries > 0:
-            try:
-                # update the seq attr in our item
-                # ensure our fqdn still holds the lock and the new seq is bigger than what's already there
-                await self.dynamo_table.update_item(
-                    Key={'shard': self.shard_id},
-                    UpdateExpression='set seq = :seq, subseq = :subseq, expires = :new_expires',
-                    ConditionExpression='fqdn = :fqdn AND (attribute_not_exists(seq) OR (seq < :seq) OR (seq = :seq AND subseq < :subseq))',
-                    ExpressionAttributeValues={
-                        ':fqdn': self.host_key,
-                        ':seq': superseq,
-                        ':subseq': subseq,
-                        ':new_expires': expire_time
-                    }
-                )
-                log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
-                return
-            except ClientError as exc:
-                if exc.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
-                    log.warning('Throttled while trying to read lock table in Dynamo: %s', exc)
-                    await asyncio.sleep(self.retry_sleep_time)
-                    retries -= 1
-                    continue
-                else:
-                    # for all other exceptions (including condition check failures) we just re-raise
-                    raise exc
+        if len(seq) < 27:
+            superseq = 0
+            subseq = seq
+        else:
+            superseq = int(seq[0:27])
+            subseq = int(seq[27:])
+        now = int(time.time())
+        # update the seq attr in our item
+        # ensure our host still holds the lock and the new seq is bigger than what's already there
+        await self.dynamo_table.update_item(
+            Key={'shard': self.shard_id},
+            UpdateExpression='set seq = :seq, subseq = :subseq',
+            ConditionExpression='expires < :expires AND fqdn = :fqdn AND (attribute_not_exists(seq) OR (seq < :seq) OR (seq = :seq AND subseq < :subseq))',
+            ExpressionAttributeValues={
+                ':fqdn': self.host_key,
+                ':seq': superseq,
+                ':subseq': subseq,
+                ':expires': now
+            }
+        )
+        log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
+
+    async def get_lock(self):
+        """
+        Check if we hold a valid lock for this shard
+        :return:
+        """
+        dynamo_key = {'shard': self.shard_id}
+
+        # Do a consistent read to get the current document for our shard id
+        resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
+        return resp.get('Item')
 
     async def lock_shard(self, lock_holding_time, drop_seq=False):
         """
@@ -103,101 +97,114 @@ class DynamoDB:
 
         log.debug('Trying to lock shard %s', self.shard_id)
         dynamo_key = {'shard': self.shard_id}
-        fqdn = self.host_key
         now = time.time()
         expire_time = int(now + lock_holding_time)
 
-        retries = self.max_retries
-        while retries > 0:
-            try:
-                # Do a consistent read to get the current document for our shard id
-                resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
-                self.shard = resp.get('Item')
-                break
-            except ClientError as e:
-                if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
-                    log.warning('Throttled while trying to read lock table in DynamoDB: %s', e)
-                    await asyncio.sleep(self.retry_sleep_time)
-                    retries -= 1
-                    continue
-                else:
-                    # all other client errors just get re-raised
-                    raise e
-
+        lock = await self.get_lock()
         # if there's no Item in the resp then the document didn't exist
-        if self.shard is not None and fqdn != self.shard.get('fqdn') and now < self.shard.get('expires'):
+        if lock is not None and self.host_key != lock.get('fqdn') and now < lock.get('expires'):
             # we don't hold the lock and it hasn't expired
-            log.debug('Not starting reader for shard %s -- locked by %s until %s',
-                      self.shard_id, self.shard.get('fqdn'), self.shard.get('expires'))
+            log.debug('Can not acquire lock for shard %s -- locked by %s until %s',
+                      self.shard_id, lock.get('fqdn'), lock.get('expires'))
             return False
 
-        retries = self.max_retries
-        while retries > 0:
-            try:
-                if self.shard is not None:
-                    # Try to acquire the lock by setting our fqdn and calculated expires.
-                    # We add a condition that ensures the fqdn & expires from the document we loaded hasn't changed to
-                    # ensure that someone else hasn't grabbed a lock first.
+        try:
+            if lock is not None:
+                # Try to acquire the lock by setting our fqdn and calculated expires.
+                # We add a condition that ensures the fqdn & expires from the document we loaded hasn't changed to
+                # ensure that someone else hasn't grabbed a lock first.
 
+                await self.dynamo_table.update_item(
+                    Key=dynamo_key,
+                    UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
+                    ConditionExpression='fqdn = :current_fqdn AND expires = :current_expires',
+                    ExpressionAttributeValues={
+                        ':new_fqdn': self.host_key,
+                        ':new_expires': expire_time,
+                        ':current_fqdn': lock.get('fqdn'),
+                        ':current_expires': lock.get('expires'),
+                    }
+                )
+
+                # If we're restarting from some particular timestamp or seq no, drop the one that
+                # is stored in dynamoDB table
+                if drop_seq:
                     await self.dynamo_table.update_item(
                         Key=dynamo_key,
-                        UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
+                        UpdateExpression='remove seq',
                         ConditionExpression='fqdn = :current_fqdn AND expires = :current_expires',
                         ExpressionAttributeValues={
-                            ':new_fqdn': fqdn,
-                            ':new_expires': expire_time,
-                            ':current_fqdn': self.shard.get('fqdn'),
-                            ':current_expires': self.shard.get('expires'),
+                            ':current_fqdn': self.host_key,
+                            ':current_expires': expire_time,
                         }
                     )
+            else:
+                # No previous lock. Here our condition prevents a race condition with two readers
+                # starting up and both adding a lock at the same time.
+                await self.dynamo_table.update_item(
+                    Key=dynamo_key,
+                    UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
+                    ConditionExpression='attribute_not_exists(#shard_id)',
+                    ExpressionAttributeValues={
+                        ':new_fqdn': self.host_key,
+                        ':new_expires': expire_time,
+                    },
+                    ExpressionAttributeNames={
+                        # 'shard' is a reserved word in expressions so we need to use a bound name to work around it
+                        '#shard_id': 'shard',
+                    },
+                    ReturnValues='ALL_NEW'
+                )
 
-                    # If we're restarting from some particular timestamp or seq no, drop the one that
-                    # is stored in dynamoDB table
-                    if drop_seq:
-                        await self.dynamo_table.update_item(
-                            Key=dynamo_key,
-                            UpdateExpression='remove seq',
-                            ConditionExpression='fqdn = :current_fqdn AND expires = :current_expires',
-                            ExpressionAttributeValues={
-                                ':current_fqdn': fqdn,
-                                ':current_expires': expire_time,
-                            }
-                        )
-                    break
-                else:
-                    # No previous lock. Here our condition prevents a race condition with two readers
-                    # starting up and both adding a lock at the same time.
-                    await self.dynamo_table.update_item(
-                        Key=dynamo_key,
-                        UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
-                        ConditionExpression='attribute_not_exists(#shard_id)',
-                        ExpressionAttributeValues={
-                            ':new_fqdn': fqdn,
-                            ':new_expires': expire_time,
-                        },
-                        ExpressionAttributeNames={
-                            # 'shard' is a reserved word in expressions so we need to use a bound name to work around it
-                            '#shard_id': 'shard',
-                        },
-                        ReturnValues='ALL_NEW'
-                    )
-                    break
-            except ClientError as e:
-                if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
-                    # someone else grabbed the lock first
-                    log.debug('Shard %s already locked by another instance', self.shard_id)
-                    return False
+                lock = {
+                    'fqdn': self.host_key,
+                    'expires': expire_time,
+                    'shard': self.shard_id
+                }
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                # someone else grabbed the lock first
+                log.debug('Shard %s already locked by another instance', self.shard_id)
+                return False
+            else:
+                raise e
 
-                if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
-                    log.warning('Throttled while trying to write lock table in Dynamo: %s', e)
-                    await asyncio.sleep(self.retry_sleep_time)
-                    retries -= 1
-                else:
-                    raise e
-
+        self.shard = lock
         self.lock_holding_time = lock_holding_time
         # we now hold the lock
-        log.debug('Locked shard %s for host %s', self.shard_id, fqdn)
+        log.debug('Locked shard %s for host %s', self.shard_id, self.host_key)
+        return True
+
+    async def refresh_lock(self):
+        """
+        Refresh already held lock
+        :return: True if refresh was successful, False otherwise
+        """
+
+        now = time.time()
+        dynamo_key = {'shard': self.shard_id}
+        expire_time = now + self.lock_holding_time
+        try:
+            await self.dynamo_table.update_item(
+                Key=dynamo_key,
+                UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
+                ConditionExpression='fqdn = :current_fqdn',
+                ExpressionAttributeValues={
+                    ':new_fqdn': self.host_key,
+                    ':new_expires': expire_time,
+                    ':current_fqdn': self.host_key,
+                    ':current_expires': expire_time,
+                }
+            )
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                # someone else grabbed the lock first
+                log.debug('Shard %s already locked by another instance', self.shard_id)
+                return False
+            else:
+                raise e
+        log.debug('Refreshed lock for shard %s, host %s for next %d sec',
+                  self.shard_id, self.host_key, self.lock_holding_time)
         return True
 
     async def get_last_checkpoint(self, ignore_fqdn=False):
@@ -210,25 +217,11 @@ class DynamoDB:
         log.debug('Getting last checkpoint for shard %s', self.shard_id)
         dynamo_key = {'shard': self.shard_id}
 
-        item = {}
-        retries = self.max_retries
-        while retries > 0:
-            try:
-                # Do a consistent read to get the current document for our shard id
-                resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
-                item = resp.get('Item')
-                break
-            except ClientError as e:
-                if e.response.get('Error', {}).get('Code') in RETRY_EXCEPTIONS:
-                    log.warning('Throttled while trying to read lock table in DynamoDB: %s', e)
-                    await asyncio.sleep(self.retry_sleep_time)
-                    retries -= 1
-                    continue
-                else:
-                    # all other client errors just get re-raised
-                    raise e
+        # Do a consistent read to get the current document for our shard id
+        resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
+        item = resp.get('Item')
 
-        if not ignore_fqdn and self.host_key != item.get('fqdn'):
+        if item is None or (not ignore_fqdn and self.host_key != item.get('fqdn')):
             return None
 
         return str(item.get('seq')) + str(item.get('subseq'))

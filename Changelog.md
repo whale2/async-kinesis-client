@@ -1,3 +1,9 @@
+## 0.2.0 (2019-05-13)
+
+- Add shard restrictions - read only designated shards, if given
+- Add retries to KinesisProducer
+- Refactor code for retries
+
 ## 0.1.7 (2019-05-10)
 
 - Fix logging

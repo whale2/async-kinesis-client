@@ -6,7 +6,7 @@ import aioboto3
 
 from botocore.exceptions import ClientError
 
-from .dynamodb import DynamoDB, CheckpointTimeoutException
+from .dynamodb import DynamoDB
 from .boto_exceptions import RETRY_EXCEPTIONS
 
 log = logging.getLogger(__name__.split('.')[-2])
@@ -163,7 +163,8 @@ class AsyncKinesisConsumer(StoppableProcess):
     DEFAULT_FALLBACK_TIME_DELTA = 3 * 60    # seconds
 
     def __init__(
-            self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None, iterator_timestamp=None):
+            self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None,
+            iterator_timestamp=None, shard_iterators=None):
         """
         Initialize Async Kinesis Consumer
         :param stream_name:         stream name to read from
@@ -171,6 +172,8 @@ class AsyncKinesisConsumer(StoppableProcess):
         :param host_key:            Key to identify reader instance; If not set, defaults to FQDN.
         :param shard_iterator_type  Type of shard iterator, see https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kinesis.html#Kinesis.Client.get_shard_iterator
         :param iterator_timestamp   Timestamp (datetime type) for shard iterator of type 'AT_TIMESTAMP'. See link above
+        :param shard_iterators      List of shard iterators; if given, consumer will read only those shards and ignore
+                                    others
         """
 
         super(AsyncKinesisConsumer, self).__init__()
@@ -178,6 +181,7 @@ class AsyncKinesisConsumer(StoppableProcess):
         self.stream_name = stream_name
         self.shard_iterator_type = shard_iterator_type
         self.iterator_timestamp = iterator_timestamp
+        self.restricted_shard_iterators = shard_iterators
 
         self.kinesis_client = aioboto3.client('kinesis')
 
@@ -269,10 +273,16 @@ class AsyncKinesisConsumer(StoppableProcess):
                 # TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
 
                 log.debug('Stream has %d shard(s)', len(stream_data['StreamDescription']['Shards']))
+                if self.restricted_shard_iterators is not None:
+                    log.debug('Ignoring shards except following: {}'.format(self.restricted_shard_iterators))
+
             # locks have to be either acquired first time or re-acquired if some shard reader has to be restarted
+            # or refreshed
             for shard_data in stream_data['StreamDescription']['Shards']:
-                iterator_args = dict(ShardIteratorType='LATEST')
                 shard_id = shard_data['ShardId']
+                if self.restricted_shard_iterators is not None and shard_id not in self.restricted_shard_iterators:
+                    continue
+                iterator_args = dict(ShardIteratorType='LATEST')
                 # see if we can get a lock on this shard id
                 dynamodb = None
                 if self.checkpoint_table:
@@ -283,14 +293,17 @@ class AsyncKinesisConsumer(StoppableProcess):
                                 shard_id=shard_data['ShardId'],
                                 host_key=self.host_key
                             ))
-                        # If iterator type is defined and not 'LATEST', we need to drop seq from DynamoDB table
-                        drop_seq = self.shard_iterator_type and self.shard_iterator_type != 'LATEST'
-                        shard_locked = await dynamodb.lock_shard(
-                            lock_holding_time=self.lock_holding_time, drop_seq=drop_seq)
-                        self.dynamodb_instances[shard_id] = dynamodb
-                    except CheckpointTimeoutException as e:
-                        log.warning('Timeout while locking shard %s: %s', shard_id, e)
-                        pass
+                        # obtain lock if we don't have it, or refresh if we're already holding it
+                        if self.dynamodb_instances.get(shard_id) is None:
+                            # If iterator type is defined and not 'LATEST', we need to drop seq from DynamoDB table
+                            drop_seq = self.shard_iterator_type and self.shard_iterator_type != 'LATEST'
+                            shard_locked = await dynamodb.lock_shard(
+                                lock_holding_time=self.lock_holding_time, drop_seq=drop_seq)
+                            self.dynamodb_instances[shard_id] = dynamodb
+                        else:
+                            shard_locked = await self.dynamodb_instances[shard_id].refresh_lock()
+                    except ClientError as e:
+                        log.warning('Error while locking shard %s: %s', shard_id, e)
                     except Exception as e:
                         raise e
                     else:

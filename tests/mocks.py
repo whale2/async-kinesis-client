@@ -41,6 +41,7 @@ class KinesisConsumerMock:
 
         self.consumer = AsyncKinesisConsumer(**consumer_kwargs)
         self.consumer.kinesis_client = client
+        self.consumer.retriable_client = client
         self.consumer.set_lock_holding_time(1)
 
         return self.consumer
