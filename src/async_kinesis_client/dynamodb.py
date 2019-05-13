@@ -191,7 +191,7 @@ class DynamoDB:
         :return: True if refresh was successful, False otherwise
         """
 
-        now = time.time()
+        now = int(time.time())
         dynamo_key = {'shard': self.shard_id}
         expire_time = now + self.lock_holding_time
         try:

@@ -1,3 +1,7 @@
+## 0.2.2 (2019-05-13)
+
+- Fix float time in refresh_lock()
+
 ## 0.2.1 (2019-05-13)
 
 - Don't raise ConditionalCheckFailedException when trying to checkpoint a record 
