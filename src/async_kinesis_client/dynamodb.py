@@ -197,13 +197,11 @@ class DynamoDB:
         try:
             await self.dynamo_table.update_item(
                 Key=dynamo_key,
-                UpdateExpression='set fqdn = :new_fqdn, expires = :new_expires',
+                UpdateExpression='set expires = :new_expires',
                 ConditionExpression='fqdn = :current_fqdn',
                 ExpressionAttributeValues={
-                    ':new_fqdn': self.host_key,
-                    ':new_expires': expire_time,
                     ':current_fqdn': self.host_key,
-                    ':current_expires': expire_time,
+                    ':new_expires': expire_time
                 }
             )
         except ClientError as e:

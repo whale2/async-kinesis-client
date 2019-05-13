@@ -1,3 +1,7 @@
+## 0.2.3 (2019-05-13)
+
+- Drop unused parameter from DynamoDB call
+
 ## 0.2.2 (2019-05-13)
 
 - Fix float time in refresh_lock()
