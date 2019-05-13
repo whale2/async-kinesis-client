@@ -62,18 +62,28 @@ class DynamoDB:
         now = int(time.time())
         # update the seq attr in our item
         # ensure our host still holds the lock and the new seq is bigger than what's already there
-        await self.dynamo_table.update_item(
-            Key={'shard': self.shard_id},
-            UpdateExpression='set seq = :seq, subseq = :subseq',
-            ConditionExpression='expires < :expires AND fqdn = :fqdn AND (attribute_not_exists(seq) OR (seq < :seq) OR (seq = :seq AND subseq < :subseq))',
-            ExpressionAttributeValues={
-                ':fqdn': self.host_key,
-                ':seq': superseq,
-                ':subseq': subseq,
-                ':expires': now
-            }
-        )
-        log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
+        try:
+            await self.dynamo_table.update_item(
+                Key={'shard': self.shard_id},
+                UpdateExpression='set seq = :seq, subseq = :subseq',
+                ConditionExpression='expires < :expires AND fqdn = :fqdn AND (attribute_not_exists(seq) OR (seq < :seq) OR (seq = :seq AND subseq < :subseq))',
+                ExpressionAttributeValues={
+                    ':fqdn': self.host_key,
+                    ':seq': superseq,
+                    ':subseq': subseq,
+                    ':expires': now
+                }
+            )
+            log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
+            return True
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                # Can't checkpoint - we either don't hold the lock or tried to checkpoint some old record
+                # We let the application decide what to do next
+                log.debug('Can not checkpoint seq %s for shard %s', seq, self.shard_id)
+                return False
+            else:
+                raise e
 
     async def get_lock(self):
         """

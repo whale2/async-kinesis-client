@@ -1,3 +1,7 @@
+## 0.2.1 (2019-05-13)
+
+- Don't raise ConditionalCheckFailedException when trying to checkpoint a record 
+
 ## 0.2.0 (2019-05-13)
 
 - Add shard restrictions - read only designated shards, if given
