@@ -1,3 +1,7 @@
+## 0.2.4 (2019-05-13)
+
+- Fix conditional expression for checkpointing
+
 ## 0.2.3 (2019-05-13)
 
 - Drop unused parameter from DynamoDB call

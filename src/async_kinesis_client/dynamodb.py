@@ -66,12 +66,12 @@ class DynamoDB:
             await self.dynamo_table.update_item(
                 Key={'shard': self.shard_id},
                 UpdateExpression='set seq = :seq, subseq = :subseq',
-                ConditionExpression='expires < :expires AND fqdn = :fqdn AND (attribute_not_exists(seq) OR (seq < :seq) OR (seq = :seq AND subseq < :subseq))',
+                ConditionExpression='expires >= :now AND fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq OR (seq = :seq AND subseq < :subseq))',
                 ExpressionAttributeValues={
                     ':fqdn': self.host_key,
                     ':seq': superseq,
                     ':subseq': subseq,
-                    ':expires': now
+                    ':now': now
                 }
             )
             log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
