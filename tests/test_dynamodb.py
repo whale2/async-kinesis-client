@@ -23,7 +23,8 @@ class TestConsumerWithDynamoDB(TestCase):
 
         self.consumer_mock = KinesisConsumerMock()
         self.consumer = self.consumer_mock.get_consumer(
-            stream_name='test-stream', checkpoint_table='test-table', host_key=self.host_key)
+            stream_name='test-stream', checkpoint_table='test-table', host_key=self.host_key,
+            shard_iterator_type='AT_TIMESTAMP', iterator_timestamp='1234567890')
         self.consumer.set_checkpoint_interval(0)
         self.consumer.set_reader_sleep_time(0.05)
         self.consumer.set_lock_holding_time(2)

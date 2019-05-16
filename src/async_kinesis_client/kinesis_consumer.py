@@ -76,7 +76,7 @@ class AsyncShardReader(StoppableProcess):
         self.record_count = 0
         self.is_running = True
         self.millis_behind_latest = 0
-        self.last_sequence_number = 0
+        self.last_sequence_number = ''
 
     async def _get_records(self):
         """
@@ -148,6 +148,7 @@ class AsyncShardReader(StoppableProcess):
             except Exception as e:
                 self.is_running = False
                 # Reporting exit on exceptions
+                log.debug("Shard %s got exception: %s", self.shard_id, e)
                 self.consumer.reader_exited(self.shard_id)
                 raise e
 
@@ -284,24 +285,23 @@ class AsyncKinesisConsumer(StoppableProcess):
                     continue
                 iterator_args = dict(ShardIteratorType='LATEST')
                 # see if we can get a lock on this shard id
-                dynamodb = None
+                dynamodb = self.dynamodb_instances.get(shard_id)
                 if self.checkpoint_table:
                     try:
-                        dynamodb = self.dynamodb_instances.get(shard_id,
-                            DynamoDB(
-                                table_name=self.checkpoint_table,
-                                shard_id=shard_data['ShardId'],
-                                host_key=self.host_key
-                            ))
                         # obtain lock if we don't have it, or refresh if we're already holding it
-                        if self.dynamodb_instances.get(shard_id) is None:
+                        if dynamodb is None:
+                            dynamodb = DynamoDB(
+                                    table_name=self.checkpoint_table,
+                                    shard_id=shard_data['ShardId'],
+                                    host_key=self.host_key
+                                )
                             # If iterator type is defined and not 'LATEST', we need to drop seq from DynamoDB table
                             drop_seq = self.shard_iterator_type and self.shard_iterator_type != 'LATEST'
                             shard_locked = await dynamodb.lock_shard(
                                 lock_holding_time=self.lock_holding_time, drop_seq=drop_seq)
                             self.dynamodb_instances[shard_id] = dynamodb
                         else:
-                            shard_locked = await self.dynamodb_instances[shard_id].refresh_lock()
+                            shard_locked = await dynamodb.refresh_lock()
                     except ClientError as e:
                         log.warning('Error while locking shard %s: %s', shard_id, e)
                     except Exception as e:
@@ -320,24 +320,31 @@ class AsyncKinesisConsumer(StoppableProcess):
 
                 if shard_id not in self.shard_readers or not self.shard_readers[shard_id].is_running:
 
-                    log.debug("%s: iterator arguments: %s", shard_id, iterator_args)
+                    log.debug("%s: initial iterator arguments: %s", shard_id, iterator_args)
 
                     # override shard_iterator_type if reader for this shard is being restarted
                     if shard_id in shards_to_restart:
+                        log.debug("%s: restarting shard reader", shard_id)
                         if self.checkpoint_table:
+                            log.debug("%s: retrieving last checkpointed seq from DynamoDB", shard_id)
                             starting_sequence_number = await dynamodb.get_last_checkpoint()
+                            log.debug("%s: got seq from DynamoDB: %s", shard_id, starting_sequence_number)
                         else:
                             # Use sequence number stored in failed reader; Kinesis wants a string, so convert it
                             starting_sequence_number = str(shards_to_restart.get(shard_id))
+                            log.debug("%s: using internally saved last checkpointed seq: %s",
+                                      shard_id, starting_sequence_number)
 
                         if starting_sequence_number is not None:
                             iterator_args['ShardIteratorType'] = 'AT_SEQUENCE_NUMBER'
                             iterator_args['StartingSequenceNumber'] = starting_sequence_number
+                            iterator_args.pop('Timestamp', None)
                         else:
                             # Fallback to timestamp now() - fallback_time if we can't get sequence number
                             iterator_args['ShardIteratorType'] = 'AT_TIMESTAMP'
                             iterator_args['Timestamp'] = \
                                 datetime.datetime.now() - datetime.timedelta(seconds=self.fallback_time_delta)
+                            iterator_args.pop('StartingSequenceNumber', None)
 
                     # override shard_iterator_type if given in constructor
                     elif self.shard_iterator_type:

@@ -1,3 +1,8 @@
+## 0.2.5 (2019-05-16)
+
+- Refactor shard reader restart code
+- Add some logging for restarts
+
 ## 0.2.4 (2019-05-13)
 
 - Fix conditional expression for checkpointing
