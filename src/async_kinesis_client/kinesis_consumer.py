@@ -119,8 +119,8 @@ class AsyncShardReader(StoppableProcess):
                     return
                 records = await self._get_records()
                 if len(records) > 0:
+                    self.last_sequence_number = records[-1]['SequenceNumber']
                     yield records
-                self.last_sequence_number = records[-1]['SequenceNumber']
 
                 # FIXME: Could there be empty records in the list? If yes, should we filter them out?
                 self.record_count += len(records)

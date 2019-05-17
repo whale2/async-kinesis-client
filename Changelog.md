@@ -1,3 +1,7 @@
+## 0.2.6 (2019-05-18)
+
+- Fix stupid bug when there's no record available
+
 ## 0.2.6 (2019-05-17)
 
 - Fix iterator arguments weirdness
