@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import time
 from unittest.mock import MagicMock
 
 import aioboto3
@@ -55,14 +56,25 @@ class KinesisConsumerMock:
     async def mock_describe_stream(self, StreamName):
 
         return {
-            'StreamDescription': {
-                'Shards': [
-                    {
-                        'ShardId': 'Shard-0000'
-                    }
-                ]
+            'test-stream': {
+                'StreamDescription': {
+                    'Shards': [
+                        {
+                            'ShardId': 'Shard-0000'
+                        }
+                    ]
+                }
+            },
+            'dynamo-backed-test-stream': {
+                'StreamDescription': {
+                    'Shards': [
+                        {
+                            'ShardId': 'Shard-XXXX'
+                        }
+                    ]
+                }
             }
-        } if not self.shard_closed else {
+        }.get(StreamName) if not self.shard_closed else {
             'StreamDescription': {
                 'Shards': []
             }
@@ -106,7 +118,15 @@ class KinesisProducerMock:
 
 class DynamoDBMock:
 
-    items = {}
+    items = {
+        'Shard-XXXX': {
+            'fqdn': 'test-host-key',
+            'expires': int(time.time()) + 20,
+            'shard': 'Shard-XXXX',
+            'seq': 100000000000000000000000000,
+            'subseq': 273
+        }
+    }
     commands = []
 
     def Table(self, table):

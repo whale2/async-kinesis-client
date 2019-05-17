@@ -1,3 +1,8 @@
+## 0.2.6 (2019-05-17)
+
+- Fix iterator arguments weirdness
+- Add explicit option for recovering from DynamoDB
+
 ## 0.2.5 (2019-05-16)
 
 - Refactor shard reader restart code

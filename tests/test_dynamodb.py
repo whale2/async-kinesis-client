@@ -113,3 +113,26 @@ class TestConsumerWithDynamoDB(TestCase):
             )
 
         self.event_loop.run_until_complete(test())
+
+    def test_recover_from_dynamo(self):
+        async def test():
+
+            consumer = self.consumer_mock.get_consumer(
+                stream_name='dynamo-backed-test-stream', checkpoint_table='test-table', host_key=self.host_key,
+                shard_iterator_type='SPLIT_HORIZON', recover_from_dynamo=True
+            )
+            async for _ in consumer.get_shard_readers():
+                break
+            self.assertEqual('100000000000000000000000000273',
+                             self.consumer_mock.iterator_kwargs.get('StartingSequenceNumber'))
+            self.assertEqual('AT_SEQUENCE_NUMBER',self.consumer_mock.iterator_kwargs.get('ShardIteratorType'))
+
+            consumer = self.consumer_mock.get_consumer(
+                stream_name='dynamo-backed-test-stream', checkpoint_table='test-table', host_key=self.host_key,
+                shard_iterator_type='SPLIT_HORIZON')
+            async for _ in consumer.get_shard_readers():
+                break
+            self.assertIsNone(self.consumer_mock.iterator_kwargs.get('StartingSequenceNumber'))
+            self.assertEqual('SPLIT_HORIZON',self.consumer_mock.iterator_kwargs.get('ShardIteratorType'))
+
+        self.event_loop.run_until_complete(test())

@@ -36,17 +36,6 @@ class DynamoDB:
         table = aioboto3.resource('dynamodb').Table(self.table_name)
         self.dynamo_table = RetriableDynamoDB(table=table, retries=max_retries, retry_sleep_time=1)
 
-    def get_iterator_args(self):
-        if self.shard is not None and self.shard.get('seq') is not None:
-            return dict(
-                ShardIteratorType='AFTER_SEQUENCE_NUMBER',
-                StartingSequenceNumber=self.shard.get('seq')
-            )
-        else:
-            return dict(
-                ShardIteratorType='LATEST'
-            )
-
     async def checkpoint(self, seq):
         """
         Write checkpoint, so we know where in the stream we've been; also, update the lock
