@@ -330,12 +330,11 @@ class AsyncKinesisConsumer(StoppableProcess):
                 if shard_id not in self.shard_readers or not self.shard_readers[shard_id].is_running:
 
                     # override shard_iterator_type if reader for this shard is being restarted
-                    if shard_id in shards_to_restart or self.recover_from_dynamodb:
+                    if shard_id in shards_to_restart:
                         log.debug("%s: restarting shard reader", shard_id)
                         if self.checkpoint_table:
                             log.debug("%s: retrieving last checkpointed seq from DynamoDB", shard_id)
                             starting_sequence_number = await dynamodb.get_last_checkpoint()
-                            log.debug("%s: got seq from DynamoDB: %s", shard_id, starting_sequence_number)
                         else:
                             # Use sequence number stored in failed reader; Kinesis wants a string, so convert it
                             starting_sequence_number = str(shards_to_restart.get(shard_id))
@@ -352,15 +351,27 @@ class AsyncKinesisConsumer(StoppableProcess):
                         else:
                             # Fallback to timestamp now() - fallback_time if we can't get sequence number
                             iterator_args['ShardIteratorType'] = 'AT_TIMESTAMP'
-                            iterator_args['Timestamp'] = \
-                                datetime.datetime.now() - datetime.timedelta(seconds=self.fallback_time_delta)
+                            timestamp = datetime.datetime.now() - datetime.timedelta(seconds=self.fallback_time_delta)
+                            iterator_args['Timestamp'] = timestamp
                             iterator_args.pop('StartingSequenceNumber', None)
+                            log.warning("%s: falling back to timestamp %s", shard_id, timestamp)
 
                     # override shard_iterator_type if given in constructor
                     elif self.shard_iterator_type:
-                        iterator_args['ShardIteratorType'] = self.shard_iterator_type
-                        if self.shard_iterator_type == 'AT_TIMESTAMP':
-                            iterator_args['Timestamp'] = self.iterator_timestamp
+                        # try to recover from dynamo if needed
+                        recovered = False
+                        if self.recover_from_dynamodb:
+                            log.debug("%s: retrieving last checkpointed seq from DynamoDB", shard_id)
+                            starting_sequence_number = await dynamodb.get_last_checkpoint()
+                            if starting_sequence_number is not None:
+                                iterator_args['ShardIteratorType'] = 'AT_SEQUENCE_NUMBER'
+                                iterator_args['StartingSequenceNumber'] = starting_sequence_number
+                                iterator_args.pop('Timestamp', None)
+                                recovered = True
+                        if not recovered:
+                            iterator_args['ShardIteratorType'] = self.shard_iterator_type
+                            if self.shard_iterator_type == 'AT_TIMESTAMP':
+                                iterator_args['Timestamp'] = self.iterator_timestamp
 
                     log.debug("%s: iterator arguments: %s", shard_id, iterator_args)
                     # get our iterator

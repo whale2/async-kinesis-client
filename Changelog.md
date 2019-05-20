@@ -1,3 +1,7 @@
+## 0.2.10 (2019-05-20)
+
+- Rework recovering logic
+
 ## 0.2.9 (2019-05-20)
 
 Some extra safeguarding

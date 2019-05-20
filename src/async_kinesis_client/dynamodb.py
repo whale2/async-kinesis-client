@@ -218,7 +218,9 @@ class DynamoDB:
         resp = await self.dynamo_table.get_item(Key=dynamo_key, ConsistentRead=True)
         item = resp.get('Item')
 
-        if item is None or (not ignore_fqdn and self.host_key != item.get('fqdn')):
+        if item is None or \
+            item.get('seq') is None or \
+                (not ignore_fqdn and self.host_key != item.get('fqdn')):
             return None
 
         return str(item.get('seq')) + str(item.get('subseq'))
