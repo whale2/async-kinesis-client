@@ -1,4 +1,8 @@
-## 0.2.6 (2019-05-18)
+## 0.2.8 (2019-05-19)
+
+- Attempt to fix Socket Timeout handling
+
+## 0.2.7 (2019-05-18)
 
 - Fix stupid bug when there's no record available
 

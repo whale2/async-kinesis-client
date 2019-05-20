@@ -93,13 +93,9 @@ class AsyncShardReader(StoppableProcess):
             code = e.response.get('Error', {}).get('Code')
             if code in RETRY_EXCEPTIONS:
                 raise RetryGetRecordsException
-            elif code == 'ExpiredIteratorException':
-                log.warning('Got ExpiredIteratorException, restarting shard reader')
-                raise ReaderExitException
             else:
                 log.error("Client error occurred while reading: %s", e)
-                self.is_running = False
-                raise e
+                raise ReaderExitException
         else:
             self.shard_iter = resp.get('NextShardIterator')
             self.millis_behind_latest = resp.get('MillisBehindLatest')
@@ -268,10 +264,12 @@ class AsyncKinesisConsumer(StoppableProcess):
             shard_readers = {}
             shards_to_restart = {}
             for shard_id, shard_reader in self.shard_readers.items():
+                log.debug("Shard reader for shard %s during rescan: %s", shard_id, shard_reader)
                 if not shard_reader.is_running:
                     log.debug('Reader for shard %s is not running anymore, forcing rescan', shard_id)
                     self.force_rescan = True
                     shards_to_restart[shard_id] = shard_reader.last_sequence_number
+                    shard_reader.stop()
                 else:
                     shard_readers[shard_id] = shard_reader
             self.shard_readers = shard_readers
