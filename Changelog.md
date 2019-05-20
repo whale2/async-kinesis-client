@@ -1,4 +1,8 @@
-## 0.2.8 (2019-05-19)
+## 0.2.9 (2019-05-20)
+
+Some extra safeguarding
+
+## 0.2.8 (2019-05-20)
 
 - Attempt to fix Socket Timeout handling
 

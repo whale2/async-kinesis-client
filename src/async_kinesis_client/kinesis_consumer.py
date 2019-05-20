@@ -172,8 +172,8 @@ class AsyncKinesisConsumer(StoppableProcess):
         :param iterator_timestamp   Timestamp (datetime type) for shard iterator of type 'AT_TIMESTAMP'. See link above
         :param shard_iterators      List of shard iterators; if given, consumer will read only those shards and ignore
                                     others
-        :param recover_from_dynamo  If True, try to recover last read sequence number from DynamoDB; If successful,
-                                    shard_iterator_type will be ignored
+        :param recover_from_dynamo  If True, try to recover last read sequence number from DynamoDB during the initialization
+                                    If successful, shard_iterator_type will be ignored
         """
 
         super(AsyncKinesisConsumer, self).__init__()
@@ -264,14 +264,16 @@ class AsyncKinesisConsumer(StoppableProcess):
             shard_readers = {}
             shards_to_restart = {}
             for shard_id, shard_reader in self.shard_readers.items():
-                log.debug("Shard reader for shard %s during rescan: %s", shard_id, shard_reader)
-                if not shard_reader.is_running:
-                    log.debug('Reader for shard %s is not running anymore, forcing rescan', shard_id)
-                    self.force_rescan = True
-                    shards_to_restart[shard_id] = shard_reader.last_sequence_number
-                    shard_reader.stop()
-                else:
-                    shard_readers[shard_id] = shard_reader
+                try:
+                    if not shard_reader.is_running:
+                        log.debug('Reader for shard %s is not running anymore, forcing rescan', shard_id)
+                        self.force_rescan = True
+                        shards_to_restart[shard_id] = shard_reader.last_sequence_number
+                        shard_reader.stop()
+                    else:
+                        shard_readers[shard_id] = shard_reader
+                except Exception as e:
+                    log.warning("Got exception %s while rescanning shards; Shard: %s", e, shard_id)
             self.shard_readers = shard_readers
             if self.force_rescan:
                 log.debug("Getting description for stream '%s'", self.stream_name)
