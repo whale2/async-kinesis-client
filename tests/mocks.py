@@ -123,8 +123,9 @@ class DynamoDBMock:
             'fqdn': 'test-host-key',
             'expires': int(time.time()) + 20,
             'shard': 'Shard-XXXX',
-            'seq': 100000000000000000000000000,
-            'subseq': 273
+            'superseq': 100000000000000000000000000,
+            'subseq': 273,
+            'seq': '100000000000000000000000000273'
         }
     }
     commands = []
@@ -147,14 +148,15 @@ class DynamoDBMock:
             item = {}
         if update.startswith('set'):
             for attr, name in [
-                    ('fqdn', ':new_fqdn'), ('expires', ':new_expires'), ('seq', ':seq'), ('subseq', ':subseq')]:
+                    ('fqdn', ':new_fqdn'), ('expires', ':new_expires'), ('seq', ':seq'),
+                            ('subseq', ':subseq'), ('superseq', ':superseq')]:
                 if attr in update:
                     item[attr] = kwargs.get('ExpressionAttributeValues', {}).get(name)
             item['shard'] = shard
             DynamoDBMock.items[shard] = item
 
         if update.startswith('remove'):
-            for attr in ['seq']:
+            for attr in ['superseq']:
                 if attr in update:
                     del item[attr]
 

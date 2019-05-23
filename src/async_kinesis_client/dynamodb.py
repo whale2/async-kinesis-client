@@ -54,11 +54,13 @@ class DynamoDB:
         try:
             await self.dynamo_table.update_item(
                 Key={'shard': self.shard_id},
-                UpdateExpression='set seq = :seq, subseq = :subseq',
-                ConditionExpression='expires >= :now AND fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq OR (seq = :seq AND subseq < :subseq))',
+                UpdateExpression='set seq = :seq, superseq = :superseq, subseq = :subseq',
+                ConditionExpression='expires >= :now AND fqdn = :fqdn AND (attribute_not_exists(superseq) '
+                                    'OR superseq < :superseq OR (superseq = :superseq AND subseq < :subseq))',
                 ExpressionAttributeValues={
                     ':fqdn': self.host_key,
-                    ':seq': superseq,
+                    ':seq': seq,
+                    ':superseq': superseq,
                     ':subseq': subseq,
                     ':now': now
                 }
@@ -66,10 +68,11 @@ class DynamoDB:
             log.debug('Shard %s: checkpointed seq %s', self.shard_id, seq)
             return True
         except ClientError as e:
-            if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+            code = e.response.get('Error', {}).get('Code')
+            log.debug('Can not checkpoint seq %s for shard %s: %s', seq, self.shard_id, code)
+            if code == 'ConditionalCheckFailedException':
                 # Can't checkpoint - we either don't hold the lock or tried to checkpoint some old record
                 # We let the application decide what to do next
-                log.debug('Can not checkpoint seq %s for shard %s', seq, self.shard_id)
                 return False
             else:
                 raise e
@@ -130,7 +133,7 @@ class DynamoDB:
                 if drop_seq:
                     await self.dynamo_table.update_item(
                         Key=dynamo_key,
-                        UpdateExpression='remove seq',
+                        UpdateExpression='remove superseq',
                         ConditionExpression='fqdn = :current_fqdn AND expires = :current_expires',
                         ExpressionAttributeValues={
                             ':current_fqdn': self.host_key,
@@ -223,4 +226,4 @@ class DynamoDB:
                 (not ignore_fqdn and self.host_key != item.get('fqdn')):
             return None
 
-        return str(item.get('seq')) + str(item.get('subseq'))
+        return item.get('seq')

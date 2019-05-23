@@ -368,6 +368,8 @@ class AsyncKinesisConsumer(StoppableProcess):
                                 iterator_args['StartingSequenceNumber'] = starting_sequence_number
                                 iterator_args.pop('Timestamp', None)
                                 recovered = True
+                            else:
+                                log.warning("%s: Can not get last saved checkpointed seq!", shard_id)
                         if not recovered:
                             iterator_args['ShardIteratorType'] = self.shard_iterator_type
                             if self.shard_iterator_type == 'AT_TIMESTAMP':

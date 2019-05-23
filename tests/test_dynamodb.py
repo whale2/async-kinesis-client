@@ -57,12 +57,12 @@ class TestConsumerWithDynamoDB(TestCase):
 
             dynamo_record = self.consumer_mock.dynamodb_mock.items.get('Shard-0000')
             self.assertEqual(self.host_key, dynamo_record.get('fqdn'))
-            self.assertEqual(100000000000000000000000000, dynamo_record.get('seq'))
+            self.assertEqual(100000000000000000000000000, dynamo_record.get('superseq'))
             self.assertEqual(2, dynamo_record.get('subseq'))
             self.assertTrue(int(time.time()) <= dynamo_record.get('expires'))
             self.assertEqual('AT_SEQUENCE_NUMBER', self.consumer_mock.iterator_kwargs.get('ShardIteratorType'))
             self.assertEqual(
-                '1000000000000000000000000001', self.consumer_mock.iterator_kwargs.get('StartingSequenceNumber'))
+                '100000000000000000000000000001', self.consumer_mock.iterator_kwargs.get('StartingSequenceNumber'))
 
         async def test():
             await asyncio.gather(
@@ -101,7 +101,7 @@ class TestConsumerWithDynamoDB(TestCase):
             for cmd in self.consumer_mock.dynamodb_mock.commands:
                 if cmd['cmd'] != 'update_item':
                     continue
-                if cmd['kwargs']['UpdateExpression'] == 'remove seq':
+                if cmd['kwargs']['UpdateExpression'] == 'remove superseq':
                     remove_cmd_found = True
                     break
             self.assertTrue(remove_cmd_found)
