@@ -1,3 +1,7 @@
+## 0.2.12 (2019-06-20)
+
+- Relax requirements
+
 ## 0.2.11 (2019-05-23)
 
 - Fix wrong sequence number returned by get_last_checkpoint() when subseq should contain leading zero

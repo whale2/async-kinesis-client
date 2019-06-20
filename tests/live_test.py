@@ -3,7 +3,7 @@ import os
 from unittest import TestCase, skip
 
 import aioboto3
-from aioboto3.aiobotocore import AioSession
+from aiobotocore import AioSession
 from botocore import credentials
 
 from src.async_kinesis_client.kinesis_consumer import AsyncKinesisConsumer

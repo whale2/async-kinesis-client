@@ -15,7 +15,7 @@ setup(
     url='https://github.com/whale2/async-kinesis-client',
 
     install_requires=[
-        'aioboto3==6.0.1',
+        'aioboto3>=6.0.1',
         'multidict>=4.5.2'
     ],
     packages=find_packages('src'),
