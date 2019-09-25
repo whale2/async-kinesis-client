@@ -162,7 +162,7 @@ class AsyncKinesisConsumer(StoppableProcess):
 
     def __init__(
             self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None,
-            iterator_timestamp=None, shard_iterators=None, recover_from_dynamo=False):
+            iterator_timestamp=None, shard_iterators=None, recover_from_dynamo=False, verify_ssl=True):
         """
         Initialize Async Kinesis Consumer
         :param stream_name:         stream name to read from
@@ -174,6 +174,9 @@ class AsyncKinesisConsumer(StoppableProcess):
                                     others
         :param recover_from_dynamo  If True, try to recover last read sequence number from DynamoDB during the initialization
                                     If successful, shard_iterator_type will be ignored
+        :param verify_ssl: (bool)   If False, the underlying aioboto3 client will not verify the ssl certificates. Value
+                                    passes through the the creation of the kinesis client. Defaults to True, which means
+                                    we will verify ssl certs on connect.
         """
 
         super(AsyncKinesisConsumer, self).__init__()
@@ -187,7 +190,7 @@ class AsyncKinesisConsumer(StoppableProcess):
             raise RuntimeError('Can not use recover_from_dynamo without checkpoint table')
         self.recover_from_dynamodb = recover_from_dynamo
 
-        self.kinesis_client = aioboto3.client('kinesis')
+        self.kinesis_client = aioboto3.client('kinesis', verify=verify_ssl)
 
         self.checkpoint_table = checkpoint_table
         self.checkpoint_callback = None
