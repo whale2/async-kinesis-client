@@ -162,7 +162,8 @@ class AsyncKinesisConsumer(StoppableProcess):
 
     def __init__(
             self, stream_name, checkpoint_table=None, host_key=None, shard_iterator_type=None,
-            iterator_timestamp=None, shard_iterators=None, recover_from_dynamo=False):
+            iterator_timestamp=None, shard_iterators=None, recover_from_dynamo=False,
+            custom_kinesis_client=None):
         """
         Initialize Async Kinesis Consumer
         :param stream_name:         stream name to read from
@@ -174,6 +175,8 @@ class AsyncKinesisConsumer(StoppableProcess):
                                     others
         :param recover_from_dynamo  If True, try to recover last read sequence number from DynamoDB during the initialization
                                     If successful, shard_iterator_type will be ignored
+        :param custom_kinesis_client (aiobotocore.client.Kinesis, optional): Custom kinesis client to use instead of
+            the basic client instantiated in this class. Leave as None for the default behaviour.
         """
 
         super(AsyncKinesisConsumer, self).__init__()
@@ -187,7 +190,12 @@ class AsyncKinesisConsumer(StoppableProcess):
             raise RuntimeError('Can not use recover_from_dynamo without checkpoint table')
         self.recover_from_dynamodb = recover_from_dynamo
 
-        self.kinesis_client = aioboto3.client('kinesis')
+        # Allow a custom kinesis client to be passed in. This allows for setting of any additional parameters in
+        # the client without needing to track them in this library.
+        if custom_kinesis_client is not None:
+            self.kinesis_client = custom_kinesis_client
+        else:
+            self.kinesis_client = aioboto3.client('kinesis')
 
         self.checkpoint_table = checkpoint_table
         self.checkpoint_callback = None
