@@ -21,7 +21,7 @@ def _get_default_partition_key():
 
 class AsyncKinesisProducer:
 
-    def __init__(self, stream_name, ordered=True):
+    def __init__(self, stream_name, ordered=True, custom_kinesis_client=None):
 
         self.stream_name = stream_name
         self.ordered = ordered
@@ -31,7 +31,13 @@ class AsyncKinesisProducer:
         self.record_buf = []
         self.buf_size = 0
 
-        client = aioboto3.client('kinesis')
+        # Allow a custom kinesis client to be passed in. This allows for setting of any additional parameters in
+        # the client without needing to track them in this library.
+        if custom_kinesis_client is not None:
+            client = custom_kinesis_client
+        else:
+            client = aioboto3.client('kinesis')
+
         self.kinesis_client = RetriableKinesisProducer(client=client)
         log.debug("Configured kinesis producer for stream '%s'; ordered=%s",
                   stream_name, ordered)
