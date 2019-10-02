@@ -1,3 +1,7 @@
+## 0.2.13 (2019-10-02)
+
+- Allow a custom kinesis client to be passed in (PR by Matt Clark/@scattym)
+
 ## 0.2.12 (2019-06-20)
 
 - Relax requirements
