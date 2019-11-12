@@ -1,3 +1,8 @@
+## 0.2.14 (2019-11-12)
+
+- Refactor main loop in kinesis_consumer
+- Add 'interator_sequence_number' parameter
+
 ## 0.2.13 (2019-10-02)
 
 - Allow a custom kinesis client to be passed in (PR by Matt Clark/@scattym)
