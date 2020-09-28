@@ -351,7 +351,7 @@ class AsyncKinesisConsumer(StoppableProcess):
             # obtain lock if we don't have it, or refresh if we're already holding it
             if dynamodb is None:
                 dynamodb = DynamoDB(
-                    table_name=self.checkpoint_table,
+                    table=self.checkpoint_table,
                     shard_id=shard_id,
                     host_key=self.host_key
                 )
