@@ -20,20 +20,19 @@ class DynamoDB:
 
     DEFAULT_MAX_RETRIES = 5
 
-    def __init__(self, table_name, shard_id, max_retries=DEFAULT_MAX_RETRIES, host_key=None):
+    def __init__(self, table, shard_id, max_retries=DEFAULT_MAX_RETRIES, host_key=None):
         """
         Initialize DynamoDB
-        :param table_name:  DynamoDB table name
+        :param table:  DynamoDB table object
         :param shard_id:    ShardId as returned by kinesis client
         :param max_retries: Max retries for communicating with DynamoDB
         :param host_key:    Key to identify reader. If no key provided, defaults to FQDN
         """
-        self.table_name = table_name
         self.shard_id = shard_id
         self.shard = {}
         self.host_key = host_key or socket.getfqdn()
-        self.lock_holding_time = None
-        table = aioboto3.resource('dynamodb').Table(self.table_name)
+        self.lock_holding_time = 0
+        self.table_name = table.table_name
         self.dynamo_table = RetriableDynamoDB(table=table, retries=max_retries, retry_sleep_time=1)
 
     async def checkpoint(self, seq):
